@@ -285,6 +285,26 @@
     </div>
   </main>
 
+  <style>
+    #cloud-dialog { border:0;border-radius:16px;padding:24px;width:min(420px,calc(100vw - 40px));box-sizing:border-box;box-shadow:0 20px 70px #15244833;color:var(--text); }
+    #cloud-dialog::backdrop { background:rgba(24,35,56,.35); }
+    #cloud-dialog h2 { margin:0 0 12px;font-size:19px; }
+    #cloud-dialog p { color:var(--muted);line-height:1.6;margin:0 0 18px; }
+    #cloud-dialog input { box-sizing:border-box;width:100%;padding:11px 12px;border:1px solid #ccd5e7;border-radius:9px;font:inherit; }
+    #cloud-dialog input:focus { outline:2px solid var(--brand);outline-offset:2px; }
+    #cloud-dialog .dialog-actions { display:flex;justify-content:flex-end;gap:10px;margin-top:22px; }
+  </style>
+  <dialog id="cloud-dialog" aria-labelledby="cloud-dialog-title" aria-describedby="cloud-dialog-description">
+    <form id="cloud-dialog-form">
+      <h2 id="cloud-dialog-title"></h2>
+      <p id="cloud-dialog-description"></p>
+      <input id="cloud-dialog-name" aria-label="存档名称" maxlength="80" autocomplete="off">
+      <div class="dialog-actions">
+        <button type="button" class="btn" id="cloud-dialog-cancel">取消</button>
+        <button type="submit" class="btn primary" id="cloud-dialog-submit">保存</button>
+      </div>
+    </form>
+  </dialog>
   <script>
     // Report script/cache failures before the application can start its own status UI.
     window.dashboardBooted=false;
@@ -301,7 +321,7 @@
       if(!window.dashboardBooted) location.reload();
     });
   </script>
-  <script src="./shared-cloud.js?v=20261029-3" onerror="reportDashboardBootFailure()"></script>
+  <script src="./shared-cloud.js?v=20261029-4" onerror="reportDashboardBootFailure()"></script>
   <script>
     // Public source contains only an empty template, never the user's business data.
     const initial = ['CB','CF','CR','DF','JC','VF','LS'].map(product=>({

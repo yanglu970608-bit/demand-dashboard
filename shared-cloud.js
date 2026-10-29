@@ -7,7 +7,34 @@ function createSharedCloud(app) {
     ready:false,revision:0,dirty:false,busy:false,conflict:false,timer:null,poll:null,base:null,draft:null,
     cacheKey:'demand-shared-cache-v1',draftKey:'demand-shared-draft-v1',selectionKey:'demand-shared-selected-month',
     deviceKey:'demand-shared-device-id',deviceId:null,initialized:false,lastSeen:null,
-    archivesBusy:false,archiveCount:0,archiveRows:[],
+    archivesBusy:false,archiveCount:0,archiveRows:[],actionPending:false,modalOpen:false,
+    ask({title,description,value=null,submit='确定'}) {
+      const dialog=this.el('cloud-dialog'),input=this.el('cloud-dialog-name'),form=this.el('cloud-dialog-form');
+      this.el('cloud-dialog-title').textContent=title;
+      this.el('cloud-dialog-description').textContent=description;
+      this.el('cloud-dialog-submit').textContent=submit;
+      input.hidden=value===null;input.required=value!==null;input.value=value||'';
+      this.modalOpen=true;
+      return new Promise(resolve=>{
+        const finish=result=>{
+          dialog.close();this.modalOpen=false;
+          form.onsubmit=null;dialog.oncancel=null;this.el('cloud-dialog-cancel').onclick=null;
+          resolve(result);
+        };
+        form.onsubmit=e=>{
+          e.preventDefault();
+          if(value!==null&&!input.value.trim()) {input.setCustomValidity('请输入存档名称');input.reportValidity();return;}
+          finish(value===null?true:input.value.trim());
+        };
+        input.oninput=()=>input.setCustomValidity('');
+        input.setCustomValidity('');
+        dialog.oncancel=e=>{e.preventDefault();finish(null);};
+        this.el('cloud-dialog-cancel').onclick=()=>finish(null);
+        dialog.showModal();
+        if(value!==null) {input.focus();input.select();}
+        else this.el('cloud-dialog-cancel').focus();
+      });
+    },
     el(id) { return document.getElementById(id); },
     message(text,error=false) { const e=this.el('cloud-message');e.textContent=text;e.dataset.error=String(error); },
     status(text,error=false) { const e=this.el('save-status');e.textContent=text;e.dataset.error=String(error); },
@@ -186,7 +213,7 @@ function createSharedCloud(app) {
       this.message('其他访问者已更新云端。为避免覆盖较新数据，请先下载当前备份，再读取云端；根据备份重新调整。',true);
     },
     async flush() {
-      if(this.busy||!this.dirty||this.conflict||!this.ready) return;
+      if(this.busy||this.modalOpen||!this.dirty||this.conflict||!this.ready) return;
       this.busy=true;clearTimeout(this.timer);let payload;
       try {
         payload=this.wire();this.status('正在保存到云端…');
@@ -210,7 +237,7 @@ function createSharedCloud(app) {
       this.busy=false;if(this.dirty) this.timer=setTimeout(()=>this.flush(),1200);
     },
     async sync() {
-      if(this.busy||this.conflict) return;
+      if(this.busy||this.conflict||this.actionPending||this.modalOpen) return;
       if(!this.initialized) { await this.start();return; }
       if(this.dirty) { await this.flush();return; }
       this.busy=true;
@@ -293,8 +320,24 @@ function createSharedCloud(app) {
       } finally {this.archivesBusy=false;}
     },
     async archiveAction(action,row=null) {
-      if(this.busy||this.conflict||!this.initialized||!this.ready) {
-        this.message('请先完成首次导入、云端同步或冲突处理。',true);return;
+      if(this.actionPending) return;
+      this.actionPending=true;
+      try {
+        if(this.busy) this.message('正在同步，完成后将继续本次操作。');
+        const deadline=Date.now()+12000;
+        while(this.busy&&Date.now()<deadline) await new Promise(resolve=>setTimeout(resolve,100));
+        if(this.busy) {this.message('同步尚未完成，请稍后重试。');return;}
+        await this.runArchiveAction(action,row);
+      } finally {
+        this.actionPending=false;
+        if(this.dirty&&!this.conflict) this.timer=setTimeout(()=>this.flush(),1200);
+      }
+    },
+    async runArchiveAction(action,row=null) {
+      if(this.conflict) {this.message('云端数据已有更新，请先处理同步冲突。',true);return;}
+      if(!this.initialized) {this.message('云端数据尚未加载，请等待连接或点击重试。');return;}
+      if(!this.ready) {
+        this.message('请先恢复未同步修改或读取最新云端数据。');return;
       }
       if(action==='clear'&&this.archiveCount<2) return;
       let name=null;
@@ -302,12 +345,12 @@ function createSharedCloud(app) {
         const month=app.get().selectedMonth;
         const nextVersion=Math.max(0,...this.archiveRows.filter(r=>r.month===month).map(r=>Number(r.version)))+1;
         const defaultName=`${month.slice(2).replace('-','')}-版本${nextVersion}`;
-        name=prompt('存档名称（确认保存，或取消存档）',defaultName);
+        name=await this.ask({title:'数据存档',description:'保存全部月份的数据，可修改下方存档名称。',value:defaultName,submit:'保存'});
         if(name===null) return;
         name=name.trim();
         if(name.length>80||!name) {this.message('名称须为1–80个字符。',true);return;}
       }
-      if(action==='clear'&&!confirm('清除顶部全部存档版本？当前正在使用的数据保持不变，后台恢复记录仍保留。')) return;
+      if(action==='clear'&&!await this.ask({title:'清除历史版本',description:'清除顶部全部存档版本，当前正在使用的数据保持不变。后台恢复记录仍保留。',submit:'确认清除'})) return;
       // Never discard an unsynced edit when switching versions or changing archive metadata.
       if(action!=='create'&&this.dirty) {
         await this.flush();if(this.dirty||this.conflict) return;
