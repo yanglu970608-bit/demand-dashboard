@@ -4,6 +4,7 @@
 !/demand-dashboard.html
 !/shared-cloud.js
 !/supabase-shared.sql
+!/supabase-archive-v2.sql
 !/README.md
 !/docs/
 /docs/*
