@@ -162,6 +162,65 @@ revoke all on function public.demand_shared_json_safe(jsonb,integer) from public
 revoke all on function public.demand_shared_valid(jsonb) from public,anon,authenticated;
 revoke all on function public.save_demand_shared(bigint,jsonb) from public,anon,authenticated;
 grant execute on function public.save_demand_shared(bigint,jsonb) to anon,authenticated;
+
+-- Named manual archives are separate from the administrator's automatic audit history.
+create table if not exists public.demand_shared_archives (
+  id bigint generated always as identity primary key,
+  month text not null check(month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),
+  version integer not null,
+  payload jsonb not null,
+  created_at timestamptz not null default now(),
+  hidden boolean not null default false,
+  unique(month,version)
+);
+alter table public.demand_shared_archives enable row level security;
+revoke all on public.demand_shared_archives from anon,authenticated;
+grant select on public.demand_shared_archives to anon,authenticated;
+drop policy if exists shared_archive_read on public.demand_shared_archives;
+create policy shared_archive_read on public.demand_shared_archives
+  for select to anon,authenticated using(not hidden);
+
+create or replace function public.manage_demand_archive(
+  expected_revision bigint, action text, archive_id bigint default null,
+  archive_month text default null, new_payload jsonb default null
+) returns jsonb language plpgsql security definer set search_path='' as $$
+declare s public.demand_shared_state%rowtype;
+  a public.demand_shared_archives%rowtype;
+  result jsonb; next_version integer; archive_payload jsonb;
+begin
+  select * into s from public.demand_shared_state where id=1 for update;
+  if s.payload is null then raise exception 'WORKSPACE_EMPTY'; end if;
+  if expected_revision is null or expected_revision<>s.revision then raise exception 'VERSION_CONFLICT'; end if;
+  if action='create' then
+    if archive_month is null or not(new_payload->'months' ? archive_month) then raise exception 'INVALID_PAYLOAD'; end if;
+    if (select count(*) from public.demand_shared_archives where not hidden)>=50
+      or (select count(*) from public.demand_shared_archives)>=1000 then raise exception 'ARCHIVE_LIMIT'; end if;
+    -- Reuse the same validation, rate limits, write pause and audit trail as ordinary edits.
+    result:=public.save_demand_shared(expected_revision,new_payload);
+    select coalesce(max(version),0)+1 into next_version from public.demand_shared_archives where month=archive_month;
+    archive_payload:=jsonb_set(new_payload,'{selectedMonth}',to_jsonb(archive_month));
+    insert into public.demand_shared_archives(month,version,payload)
+      values(archive_month,next_version,archive_payload) returning * into a;
+  elsif action in ('restore','clear') then
+    select * into a from public.demand_shared_archives where id=archive_id and not hidden;
+    if not found then raise exception 'ARCHIVE_NOT_FOUND'; end if;
+    if action='restore' then
+      result:=public.save_demand_shared(expected_revision,a.payload);
+    else
+      -- Only clear after this archive was selected and its data is still current.
+      if (s.payload-'selectedMonth') is distinct from (a.payload-'selectedMonth') then
+        raise exception 'ARCHIVE_NOT_CURRENT';
+      end if;
+      result:=public.save_demand_shared(expected_revision,s.payload);
+      -- Recoverable clear: never delete payloads or automatic audit history.
+      update public.demand_shared_archives set hidden=true where id<>a.id and not hidden;
+    end if;
+  else raise exception 'INVALID_ACTION';
+  end if;
+  return jsonb_build_object('state',result,'archive_id',a.id);
+end $$;
+revoke all on function public.manage_demand_archive(bigint,text,bigint,text,jsonb) from public,anon,authenticated;
+grant execute on function public.manage_demand_archive(bigint,text,bigint,text,jsonb) to anon,authenticated;
 commit;
 
 -- Administrator emergency stop (do NOT execute unless needed):

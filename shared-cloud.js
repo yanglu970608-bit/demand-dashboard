@@ -7,6 +7,7 @@ function createSharedCloud(app) {
     ready:false,revision:0,dirty:false,busy:false,conflict:false,timer:null,poll:null,base:null,draft:null,
     cacheKey:'demand-shared-cache-v1',draftKey:'demand-shared-draft-v1',selectionKey:'demand-shared-selected-month',
     deviceKey:'demand-shared-device-id',deviceId:null,initialized:false,lastSeen:null,
+    preview:null,returnData:null,chosenArchive:null,archivesBusy:false,
     el(id) { return document.getElementById(id); },
     message(text,error=false) { const e=this.el('cloud-message');e.textContent=text;e.dataset.error=String(error); },
     status(text,error=false) { const e=this.el('save-status');e.textContent=text;e.dataset.error=String(error); },
@@ -31,6 +32,9 @@ function createSharedCloud(app) {
           :raw.includes('DAILY_WRITE_LIMIT')?'今天已达到2000次共享保存限制，请联系项目管理员。'
           :raw.includes('WRITES_PAUSED')?'管理员已暂停公共编辑。'
           :raw.includes('INVALID_PAYLOAD')?'数据格式校验未通过，未保存到云端。'
+          :raw.includes('ARCHIVE_LIMIT')?'存档已达上限，请清理历史版本；累计达到1000份时请联系管理员。'
+          :raw.includes('ARCHIVE_NOT_CURRENT')?'当前数据已变化，请重新选择并使用需要保留的版本。'
+          :raw.includes('ARCHIVE_NOT_FOUND')?'此版本已被清理，请刷新存档列表。'
           :`同步失败（${response.status}），请重试或联系管理员。`);
         err.code=raw;throw err;
       }
@@ -160,6 +164,7 @@ function createSharedCloud(app) {
         } catch(_) { this.lock(true); }
         this.status('同步失败',true);this.message(error.message,true);this.el('cloud-retry').hidden=false;
       } finally { this.busy=false; }
+      await this.loadArchives();
       if(!this.poll) this.poll=setInterval(()=>{if(!document.hidden) this.sync();},5000);
     },
     queueSave() {
@@ -202,7 +207,7 @@ function createSharedCloud(app) {
       this.busy=false;if(this.dirty) this.timer=setTimeout(()=>this.flush(),1200);
     },
     async sync() {
-      if(this.busy||this.conflict) return;
+      if(this.busy||this.conflict||this.preview) return;
       if(!this.initialized) { await this.start();return; }
       if(this.dirty) { await this.flush();return; }
       this.busy=true;
@@ -219,6 +224,7 @@ function createSharedCloud(app) {
         this.el('cloud-retry').hidden=true;
       } catch(error) { this.message(error.message,true);this.el('cloud-retry').hidden=false; }
       finally { this.busy=false; }
+      await this.loadArchives();
     },
     async initialize() {
       if(this.busy||this.initialized) return;
@@ -245,11 +251,11 @@ function createSharedCloud(app) {
       } catch(error) { this.message(`导入失败：${error.message}`,true); }
     },
     recover() {
-      if(this.conflict||this.busy||!this.draft) return;
+      if(this.preview||this.conflict||this.busy||!this.draft) return;
       this.lock(false);this.dirty=true;this.el('cloud-recover').hidden=true;this.el('cloud-reload').hidden=true;this.flush();
     },
     async reloadRemote() {
-      if(this.busy||!confirm('先下载当前数据备份，再读取云端最新数据。未同步改动不会覆盖云端。继续吗？')) return;
+      if(this.preview||this.busy||!confirm('先下载当前数据备份，再读取云端最新数据。未同步改动不会覆盖云端。继续吗？')) return;
       this.backup();this.busy=true;this.lock(true);clearTimeout(this.timer);
       try {
         const row=await this.fetchRow();if(!row.payload) throw new Error('云端尚无数据。');
@@ -260,13 +266,95 @@ function createSharedCloud(app) {
       } catch(error) { this.message(error.message,true); }
       finally { this.busy=false; }
     },
-    deleteMonth() {
-      if(!this.ready||this.busy) return;
-      const current=app.get(),month=current.selectedMonth;
-      if(month==='2026-08') { this.message('2026年8月是基础月份，保留用于历史对比，不能删除。',true);return; }
-      if(!confirm(`删除共享数据中的 ${month}？所有访问者都会受影响。删除前将下载备份，数据库仍保留历史版本。`)) return;
-      this.backup();const copy=structuredClone(current);delete copy.months[month];
-      copy.selectedMonth=Object.keys(copy.months).sort().at(-1);app.set(copy);this.queueSave();
+    async loadArchives() {
+      if(this.archivesBusy||this.preview) return;
+      this.archivesBusy=true;
+      try {
+        const rows=await this.request('/rest/v1/demand_shared_archives?select=id,month,version&order=id.desc&limit=50');
+        const list=this.el('archive-list');list.replaceChildren();
+        for(const row of rows) {
+          const button=document.createElement('button');button.className='btn';
+          button.textContent=`${row.month.slice(2).replace('-','')}-版本${row.version}`;
+          button.dataset.archiveId=row.id;
+          button.addEventListener('click',()=>this.previewArchive(row,button.textContent));list.appendChild(button);
+        }
+        if(!this.preview) this.el('archive-message').textContent=rows.length?'点击版本按钮预览，确认后可使用该版本。':'暂无存档';
+      } catch(error) {
+        this.el('archive-message').textContent=error.message.includes('尚未配置')
+          ?'存档功能需要升级数据库：请重新执行最新版 supabase-shared.sql。':`存档列表读取失败：${error.message}`;
+      } finally {this.archivesBusy=false;}
+    },
+    previewControls(visible) {
+      for(const id of ['archive-use','archive-cancel','archive-month','archive-edit-view','archive-group-view']) this.el(id).hidden=!visible;
+      this.el('cloud-archive').disabled=visible;
+    },
+    async previewArchive(row,label) {
+      if(this.busy||this.preview||this.conflict||!this.initialized) return;
+      if(this.dirty) { await this.flush();if(this.dirty) return; }
+      this.busy=true;this.lock(true);
+      try {
+        const rows=await this.request(`/rest/v1/demand_shared_archives?id=eq.${row.id}&select=payload`);
+        if(!rows.length) throw new Error('此版本已被清理，请刷新列表。');
+        const snapshot=this.normalize(rows[0].payload);
+        this.returnData=structuredClone(app.get());this.preview={id:row.id,label};
+        app.set(snapshot);
+        const monthPicker=this.el('archive-month');monthPicker.replaceChildren();
+        for(const month of Object.keys(snapshot.months).sort()) {
+          const option=document.createElement('option');option.value=month;option.textContent=month;monthPicker.appendChild(option);
+        }
+        monthPicker.value=snapshot.selectedMonth;
+        this.previewControls(true);this.el('archive-clear').hidden=true;
+        this.el('archive-message').textContent=`正在预览 ${label}（只读），尚未改变公共数据。`;
+      } catch(error) {this.message(error.message,true);this.lock(false);}
+      finally {this.busy=false;}
+    },
+    cancelPreview() {
+      if(!this.preview||this.busy) return;
+      app.set(this.returnData);this.preview=null;this.returnData=null;
+      this.previewControls(false);this.lock(false);this.sync();
+    },
+    async archiveAction(action) {
+      if(this.busy||this.conflict||!this.initialized) {
+        this.message('请先完成首次导入、云端同步或冲突处理。',true);return;
+      }
+      if(action==='create'&&(!this.ready||this.preview)) return;
+      if(action==='restore'&&!this.preview) return;
+      if(action==='clear'&&(!this.chosenArchive||this.preview)) return;
+      if(action==='restore'&&!confirm(`使用 ${this.preview.label} 的全部月份数据替换当前共享数据？所有访问者都会同步变更，替换前会下载当前数据备份。`)) return;
+      if(action==='clear'&&!confirm('保留已选定版本，清除其他全部存档按钮？此操作影响所有访问者，后台仍保留可恢复记录。')) return;
+      if(action==='clear'&&this.dirty) {this.message('当前有修改，请先同步并重新选择要保留的版本。',true);return;}
+      if(action==='restore') this.backup(this.returnData);
+      this.busy=true;clearTimeout(this.timer);this.lock(true);
+      try {
+        const body={expected_revision:this.revision,action};
+        if(action==='create') {body.new_payload=this.wire();body.archive_month=app.get().selectedMonth;}
+        else body.archive_id=action==='restore'?this.preview.id:this.chosenArchive;
+        const result=await this.request('/rest/v1/rpc/manage_demand_archive',body);
+        const state=result.state,payload=this.wire(state.payload);
+        if(!(state.revision>this.revision)) throw new Error('存档结果校验失败，请刷新云端确认。');
+        if(action==='restore') {
+          app.set(this.normalize(state.payload));this.chosenArchive=result.archive_id;
+          this.preview=null;this.returnData=null;
+        }
+        this.base=payload;this.revision=state.revision;this.write(this.cacheKey,state);
+        this.dirty=false;this.clearDraft();
+        this.previewControls(false);
+        this.el('archive-clear').hidden=!this.chosenArchive;
+        this.status('已保存到云端');this.message(action==='create'?'数据存档成功。':action==='restore'?'已使用选定版本，所有访问者将同步。':'其他历史版本已从列表清除，后台记录仍可恢复。');
+      } catch(error) {
+        this.message(error.message,true);
+        // A restore conflict concerns the pre-preview working data, never the preview itself.
+        if(error.code?.includes('VERSION_CONFLICT')) {
+          if(this.preview) {
+            app.set(this.returnData);this.preview=null;this.returnData=null;
+            this.previewControls(false);
+          }
+          this.showConflict();
+        } else if(this.dirty) {this.keepDraft();this.el('cloud-retry').hidden=false;}
+      } finally {
+        this.busy=false;this.lock(!!this.preview||this.conflict);
+        await this.loadArchives();
+      }
     }
   };
   document.getElementById('cloud-backup').addEventListener('click',()=>cloud.backup());
@@ -276,7 +364,17 @@ function createSharedCloud(app) {
   document.getElementById('cloud-retry').addEventListener('click',()=>cloud.initialized?cloud.sync():cloud.start());
   document.getElementById('cloud-import').addEventListener('click',()=>document.getElementById('cloud-import-file').click());
   document.getElementById('cloud-import-file').addEventListener('change',e=>{if(e.target.files[0]) cloud.importFile(e.target.files[0]);e.target.value='';});
-  document.getElementById('delete-month').addEventListener('click',()=>cloud.deleteMonth());
+  document.getElementById('cloud-archive').addEventListener('click',()=>cloud.archiveAction('create'));
+  document.getElementById('archive-use').addEventListener('click',()=>cloud.archiveAction('restore'));
+  document.getElementById('archive-cancel').addEventListener('click',()=>cloud.cancelPreview());
+  document.getElementById('archive-clear').addEventListener('click',()=>cloud.archiveAction('clear'));
+  document.getElementById('archive-month').addEventListener('change',e=>{
+    if(!cloud.preview||cloud.busy) return;
+    const snapshot=structuredClone(app.get());snapshot.selectedMonth=e.target.value;app.set(snapshot);
+  });
+  for(const view of ['edit-view','group-view']) document.getElementById(`archive-${view}`).addEventListener('click',()=>{
+    if(cloud.preview) document.querySelector(`.tab[data-view="${view}"]`).click();
+  });
   window.addEventListener('focus',()=>cloud.sync());
   window.addEventListener('online',()=>cloud.sync());
   document.addEventListener('visibilitychange',()=>{if(!document.hidden) cloud.sync();});

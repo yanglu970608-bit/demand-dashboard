@@ -144,7 +144,6 @@
     .gap-ok { color:#21845e; } .gap-risk { color:#d24f4f; }
     .gap-balanced { color:var(--muted); }
     #chengdu-alert { margin:0 0 16px; padding:10px 14px; border:1px solid #f1c6c6; border-radius:10px; background:#fff2f2; color:#bc3636; font-weight:600; }
-    .pending-time { color:#a86508; font-size:12px; font-weight:500; }
     [data-ctime-note]:not([hidden]) { display:block; margin-top:4px; }
     .group-products { padding:6px; border-radius:10px; display:flex; flex-wrap:nowrap; justify-content:center; align-items:center; gap:6px; min-height:48px; }
     #group-view table { border-collapse:separate; border-spacing:0; }
@@ -186,6 +185,13 @@
       <div class="hint">无需登录。所有访问者共用、查看和编辑这份数据，请勿填写秘密信息。打开、重新聚焦及每5秒自动检查云端更新。</div>
       <div id="cloud-message" role="status" aria-live="polite">正在连接 Supabase…</div>
       <div class="cloud-actions">
+        <button class="btn primary" id="cloud-archive">数据存档</button>
+        <button class="btn" id="archive-use" hidden>使用此版本</button>
+        <button class="btn" id="archive-cancel" hidden>返回当前数据</button>
+        <select class="btn" id="archive-month" aria-label="预览存档月份" hidden></select>
+        <button class="btn" id="archive-edit-view" hidden>查看编辑数据</button>
+        <button class="btn" id="archive-group-view" hidden>查看小组调量</button>
+        <button class="btn" id="archive-clear" hidden>清除其他历史版本</button>
         <button class="btn" id="cloud-backup">下载当前数据备份</button>
         <button class="btn primary" id="cloud-migrate" hidden>备份并公开当前数据</button>
         <button class="btn" id="cloud-import" hidden>导入JSON备份预览</button>
@@ -194,6 +200,8 @@
         <button class="btn" id="cloud-reload" hidden>备份当前数据并读取云端</button>
         <button class="btn" id="cloud-retry" hidden>重试云端保存</button>
       </div>
+      <div class="cloud-actions" id="archive-list" aria-label="数据存档版本"></div>
+      <div id="archive-message" role="status" aria-live="polite"></div>
     </section>
     <div id="dashboard-content" inert>
     <div class="month-controls">
@@ -213,7 +221,6 @@
           <div class="month-grid" id="month-grid"></div>
         </div>
       </div>
-      <button class="btn" id="delete-month" title="删除会影响所有访问者，删除前下载备份">删除本月</button>
       <span class="control-label">日期范围</span>
       <div class="date-range-fields">
         <div class="date-picker"><button class="date-field" data-open-date="start" aria-label="选择开始日期" aria-expanded="false" aria-controls="date-popup"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 10h16M8 14h1m3 0h1m3 0h1M8 17h1m3 0h1"/></svg><span id="range-start-label">开始日期</span></button><input type="date" id="range-start" hidden></div>
@@ -682,46 +689,35 @@
       const month=store.months[selectedMonth];
       document.getElementById('chengdu-body').innerHTML=month.chengduGroups.map((g,i)=>g.products.map((row,j)=>{
         const span=`rowspan="${g.products.length}"`;
-        return `<tr>${j===0?`<td ${span} class="c-fixed c1"><strong>${g.name}</strong></td><td ${span} class="c-fixed c2">${g.owner}</td>`:''}<td class="c-fixed c3">${row.product}</td><td>${row.product==='SLOTS'?'<span data-cslots></span>':chengduInput(i,j,'demand',row.demand)}</td><td data-cdays="${i}-${j}" title="${row.legacyDays!==undefined?'原表有预留天数但需求为0，暂保留原值；编辑需求或制作时间后自动计算':''}"></td><td>${chengduInput(i,j,'avgTime',row.avgTime)}<span class="pending-time" data-ctime-note="${i}-${j}" id="ctime-note-${i}-${j}" hidden>待填写</span></td>${j===0?`<td ${span} class="derived" data-csum="${i}"></td><td ${span} class="derived" data-ccapacity="${i}"></td><td ${span} class="derived" data-cgap="${i}"></td><td ${span}>${chengduInput(i,-1,'people',g.people)}</td><td ${span}>${chengduInput(i,-1,'leave',g.leave)}</td>`:''}</tr>`;
+        return `<tr>${j===0?`<td ${span} class="c-fixed c1"><strong>${g.name}</strong></td><td ${span} class="c-fixed c2">${g.owner}</td>`:''}<td class="c-fixed c3">${row.product}</td><td>${row.product==='SLOTS'?'<span data-cslots></span>':chengduInput(i,j,'demand',row.demand)}</td><td data-cdays="${i}-${j}" title="${row.legacyDays!==undefined?'原表有预留天数但需求为0，暂保留原值；编辑需求或制作时间后自动计算':''}"></td><td>${chengduInput(i,j,'avgTime',row.avgTime)}</td>${j===0?`<td ${span} class="derived" data-csum="${i}"></td><td ${span} class="derived" data-ccapacity="${i}"></td><td ${span} class="derived" data-cgap="${i}"></td><td ${span}>${chengduInput(i,-1,'people',g.people)}</td><td ${span}>${chengduInput(i,-1,'leave',g.leave)}</td>`:''}</tr>`;
       }).join('')).join('');
       updateChengduOutputs();
     }
     function updateChengduOutputs() {
       const month=store.months[selectedMonth];
-      let anyPending=false;
       month.chengduGroups.forEach((g,i)=>{
-        let pending=false;
         g.products.forEach((row,j)=>{
-          const missing=chengduDemand(row,month)>0 && row.avgTime===0;
-          pending ||= missing;
           const cell=document.querySelector(`[data-cdays="${i}-${j}"]`);
-          cell.textContent=missing?'待填写':formatQuantity(chengduDays(row,month));
-          cell.classList.toggle('pending-time',missing);
-          document.querySelector(`[data-ctime-note="${i}-${j}"]`).hidden=!missing;
-          const input=document.querySelector(`[data-cgroup="${i}"][data-cproduct="${j}"][data-ckey="avgTime"]`);
-          if(missing) input.setAttribute('aria-describedby',`ctime-note-${i}-${j}`);
-          else input.removeAttribute('aria-describedby');
+          cell.textContent=formatQuantity(chengduDays(row,month));
         });
-        anyPending ||= pending;
         const required=g.products.reduce((a,r)=>a+chengduDays(r,month),0), capacity=g.people*period().days-g.leave, gap=capacity-required;
         const sumCell=document.querySelector(`[data-csum="${i}"]`);
-        sumCell.textContent=pending?'待补全':formatQuantity(required);
-        sumCell.classList.toggle('pending-time',pending);
+        sumCell.textContent=formatQuantity(required);
         document.querySelector(`[data-ccapacity="${i}"]`).textContent=roundedCount(capacity);
         const status=gapStatus(capacity,required);
         const gapCell=document.querySelector(`[data-cgap="${i}"]`);
-        gapCell.textContent=pending?'待补全':status.text;
-        gapCell.className=`derived ${pending?'pending-time':status.cls}`;
-        if(i===0) document.getElementById('chengdu-alert').hidden=pending || status.delta>=0;
+        gapCell.textContent=status.text;
+        gapCell.className=`derived ${status.cls}`;
+        if(i===0) document.getElementById('chengdu-alert').hidden=status.delta>=0;
       });
       document.querySelector('[data-cslots]').textContent=month.groups.reduce((a,g)=>a+g.chengdu,0);
       const required=month.chengduGroups.reduce((a,g)=>a+g.products.reduce((n,r)=>n+chengduDays(r,month),0),0);
       const capacity=month.chengduGroups.reduce((a,g)=>a+g.people*period().days-g.leave,0),gap=capacity-required;
       const status=gapStatus(capacity,required);
       document.getElementById('chengdu-summary').innerHTML=[
-        ['应制作总天数（天）',anyPending?'待补全':formatQuantity(required),anyPending?'pending-time':''],
+        ['应制作总天数（天）',formatQuantity(required),''],
         ['人员总承载力（天）',roundedCount(capacity),''],
-        ['整体余量 / 缺口（天）',anyPending?'待补全':status.text,anyPending?'pending-time':status.cls]
+        ['整体余量 / 缺口（天）',status.text,status.cls]
       ].map(([label,value,cls])=>`<article class="stat"><div class="stat-label">${label}</div><div class="stat-value ${cls}">${value}</div></article>`).join('');
       document.querySelectorAll('[data-gderived="chengduWeek"]').forEach(el=>el.textContent=chengduWeekDays(groups[Number(el.dataset.group)]));
     }
@@ -751,7 +747,6 @@
       const weeks=period().weeks;
       const slots=store.months[selectedMonth].chengduGroups[0].products.find(r=>r.product==='SLOTS');
       if(!weeks) return '—';
-      if(group.chengdu>0 && !slots.avgTime) return '待填写';
       return formatQuantity(group.chengdu/weeks*slots.avgTime);
     }
     function groupInput(i,key,value) { return `<input type="number" min="${key==='avgTime'?'0.1':'0'}" step="${key==='avgTime'?'0.1':key==='people'?'any':'1'}" value="${value}" data-group="${i}" data-gkey="${key}" aria-label="${groups[i].name} ${key}">`; }
@@ -996,6 +991,7 @@
       document.querySelector(`[data-open-date="${dateTarget}"]`).focus();
     });
     function undoLastChange() {
+      if(!cloud.ready) return;
       const snapshot=undoByMonth.get(selectedMonth);
       if(!snapshot) return;
       if(document.activeElement.matches('input')) document.activeElement.blur();
