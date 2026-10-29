@@ -178,25 +178,21 @@
   <main class="shell">
     <header>
       <div><h1>需求量看板</h1><div class="subtitle">本月总量、分岗位配置与分周大致量</div></div>
-      <div class="save-tools"><span class="hint" id="save-status" role="status">未登录云端</span></div>
+      <div class="save-tools"><span class="hint" id="save-status" role="status">正在连接共享云端…</span></div>
     </header>
 
-    <section class="cloud-panel" aria-label="个人云端存储">
-      <h2>个人云端存储</h2>
-      <div class="hint">仅授权账号可访问。登录后以 Supabase 云端数据为准；旧浏览器数据暂保留用于迁移。</div>
-      <form class="cloud-form" id="cloud-login">
-        <label>邮箱<input id="cloud-email" type="email" required autocomplete="username"></label>
-        <label>密码<input id="cloud-password" type="password" required autocomplete="current-password"></label>
-        <button class="btn primary" type="submit">登录云端</button>
-      </form>
-      <div id="cloud-message" role="status" aria-live="polite">尚未连接。先完成 Supabase 建表和账号授权，再登录。下方为本地迁移预览。</div>
+    <section class="cloud-panel" aria-label="公共共享数据">
+      <h2>公共共享数据</h2>
+      <div class="hint">无需登录。所有访问者共用、查看和编辑这份数据，请勿填写秘密信息。打开、重新聚焦及每5秒自动检查云端更新。</div>
+      <div id="cloud-message" role="status" aria-live="polite">正在连接 Supabase…</div>
       <div class="cloud-actions">
         <button class="btn" id="cloud-backup">下载当前数据备份</button>
-        <button class="btn primary" id="cloud-migrate" hidden>下载备份并迁移到云端</button>
+        <button class="btn primary" id="cloud-migrate" hidden>备份并公开当前数据</button>
+        <button class="btn" id="cloud-import" hidden>导入JSON备份预览</button>
+        <input id="cloud-import-file" type="file" accept=".json,application/json" hidden>
         <button class="btn" id="cloud-recover" hidden>恢复未同步修改</button>
         <button class="btn" id="cloud-reload" hidden>备份当前数据并读取云端</button>
         <button class="btn" id="cloud-retry" hidden>重试云端保存</button>
-        <button class="btn" id="cloud-logout" hidden>退出登录</button>
       </div>
     </section>
     <div id="dashboard-content" inert>
@@ -217,6 +213,7 @@
           <div class="month-grid" id="month-grid"></div>
         </div>
       </div>
+      <button class="btn" id="delete-month" title="删除会影响所有访问者，删除前下载备份">删除本月</button>
       <span class="control-label">日期范围</span>
       <div class="date-range-fields">
         <div class="date-picker"><button class="date-field" data-open-date="start" aria-label="选择开始日期" aria-expanded="false" aria-controls="date-popup"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 10h16M8 14h1m3 0h1m3 0h1M8 17h1m3 0h1"/></svg><span id="range-start-label">开始日期</span></button><input type="date" id="range-start" hidden></div>
@@ -287,6 +284,7 @@
     </div>
   </main>
 
+  <script src="./shared-cloud.js"></script>
   <script>
     // Public source contains only an empty template, never the user's business data.
     const initial = ['CB','CF','CR','DF','JC','VF','LS'].map(product=>({
@@ -566,7 +564,7 @@
     }
     function priorTotal(row) {
       const prev=previousMonth(selectedMonth);
-      if(prev==='2026-07') return initial.find(r=>r.product===row.product).july;
+      if(prev==='2026-07') return Number.isFinite(row.july)?row.july:null;
       const prior=store.months[prev]?.data.find(r=>r.product===row.product);
       return prior ? total(prior) : null;
     }
@@ -1008,241 +1006,20 @@
       closeDatePicker();
       render(); saveMonths();
     }
-    // Tokens are deliberately kept in memory only. The publishable key is not a server secret.
-    const cloud={
-      url:'https://mjqjcwwthhjofmxyrulp.supabase.co',
-      key:'sb_publishable_rhvEeAOZiOaZvGSQt06mjg_dedjeQ3S',
-      session:null,ready:false,revision:0,dirty:false,busy:false,timer:null,draft:null,conflict:false,
-      draftKey:'demand-dashboard-cloud-draft-v1',
-      message(text,error=false) {
-        const el=document.getElementById('cloud-message');
-        el.textContent=text;el.dataset.error=String(error);
+    const cloud=createSharedCloud({
+      get:()=>store,
+      migrate:month=>{
+        if(!month.nonSlots) month.nonSlots=structuredClone(nonSlotsInitial);
+        migrateGroupReserves(month);migrateChengdu(month);
       },
-      status(text,error=false) {
-        const el=document.getElementById('save-status');
-        el.textContent=text;el.dataset.error=String(error);
-      },
-      lock(locked) {
-        this.ready=!locked;document.getElementById('dashboard-content').inert=locked;
-      },
-      async request(path,{method='GET',body,auth=true,headers={}}={}) {
-        if(auth && !this.session) throw new Error('请先登录云端。');
-        if(auth && Date.now()>this.session.expiresAt-60000) {
-          const refreshed=await this.request('/auth/v1/token?grant_type=refresh_token',{
-            method:'POST',body:{refresh_token:this.session.refresh_token},auth:false
-          });
-          this.session={...refreshed,expiresAt:Date.now()+refreshed.expires_in*1000};
-        }
-        let response;
-        try {
-          response=await fetch(this.url+path,{
-            method,headers:{apikey:this.key,'Content-Type':'application/json',
-              ...(auth?{Authorization:`Bearer ${this.session.access_token}`} :{}),...headers},
-            ...(body!==undefined?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)
-          });
-        } catch(_) { throw new Error('网络连接失败或超时；数据尚未同步，请重试，不要关闭页面。'); }
-        const text=await response.text();
-        let result;try { result=text?JSON.parse(text):null; } catch(_) { throw new Error('云端返回异常，未确认保存成功。'); }
-        if(!response.ok) {
-          const error=new Error(response.status===404 || result?.code==='PGRST205'
-            ?'缺少看板数据表，请在 Supabase SQL Editor 执行 supabase-setup.sql。'
-            :response.status===401?'登录已失效或邮箱/密码不正确，请重新登录。'
-            :response.status===403?'此账号没有看板权限，请检查 SQL 中授权的邮箱。'
-            :`云端请求失败（${response.status}）：${result?.msg||result?.message||result?.error_description||'请稍后重试'}`);
-          error.code=result?.code;error.httpStatus=response.status;throw error;
-        }
-        return result;
-      },
-      normalize(payload) {
-        const snapshot=structuredClone(payload);
-        if(!snapshot || !validMonth(snapshot.selectedMonth) || !snapshot.months?.[snapshot.selectedMonth] || !snapshot.months['2026-08'])
-          throw new Error('云端数据结构不完整，已停止加载，未覆盖本地数据。');
-        for(const [month,m] of Object.entries(snapshot.months)) {
-          if(!validMonth(month)||!Array.isArray(m.data)||m.data.length!==initial.length||!Array.isArray(m.groups)||m.groups.length!==4)
-            throw new Error('云端月份数据异常，已停止加载。');
-          if(m.data.some((r,i)=>r.product!==initial[i].product||numericKeys.some(k=>!Number.isSafeInteger(r[k])||r[k]<0)))
-            throw new Error('云端产品数据异常，已停止加载。');
-          if(!m.nonSlots) m.nonSlots=structuredClone(nonSlotsInitial);
-          if(m.nonSlots.length!==nonSlotsInitial.length||m.nonSlots.some((r,i)=>r.product!==nonSlotsInitial[i].product))
-            throw new Error('云端非SLOTS数据异常，已停止加载。');
-          for(const [i,g] of m.groups.entries()) {
-            if(g.name!==groupInitial[i].name||g.owner!==groupInitial[i].owner||!Array.isArray(g.products)||g.products.some(p=>!initial.some(r=>r.product===p))||
-              ['innovation','playable','chengdu','avgTime','people','fulltime','leave'].some(k=>!Number.isFinite(g[k])||g[k]<0)||g.avgTime<=0)
-              throw new Error('云端小组数据异常，已停止加载。');
-          }
-          migrateGroupReserves(m);migrateChengdu(m);
-        }
-        return snapshot;
-      },
-      adopt(payload) {
-        store=this.normalize(payload);selectedMonth=store.selectedMonth;({data,groups}=store.months[selectedMonth]);
+      set:snapshot=>{
+        store=snapshot;selectedMonth=store.selectedMonth;({data,groups}=store.months[selectedMonth]);
+        document.getElementById('notice').textContent='';
         undoByMonth.clear();closeDatePicker();closeMonthPicker();render();
-      },
-      backup(payload=store,label='需求量看板备份') {
-        const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'});
-        const url=URL.createObjectURL(blob),a=document.createElement('a');
-        a.href=url;a.download=`${label}-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
-        document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
-      },
-      keepDraft() {
-        if(!this.session) return;
-        const draft={owner:this.session.user.id,revision:this.revision,payload:structuredClone(store)};
-        this.draft=draft;
-        try { localStorage.setItem(this.draftKey,JSON.stringify(draft)); }
-        catch(_) { this.message('应急副本无法写入浏览器，请尽快确认云端保存成功，或下载备份。',true); }
-      },
-      readDraft() {
-        try { return JSON.parse(localStorage.getItem(this.draftKey)); } catch(_) { return null; }
-      },
-      clearDraft() {
-        this.draft=null;
-        try { localStorage.removeItem(this.draftKey); } catch(_) {}
-      },
-      async loadRemote() {
-        const owners=await this.request('/rest/v1/demand_dashboard_owner?select=owner_id');
-        if(!owners?.some(o=>o.owner_id===this.session.user.id)) throw new Error('当前账号未被授权。请执行建表脚本并填写你自己的登录邮箱。');
-        const rows=await this.request(`/rest/v1/demand_dashboard_state?owner_id=eq.${encodeURIComponent(this.session.user.id)}&select=payload,revision`);
-        if(!Array.isArray(rows)||rows.length>1) throw new Error('云端数据返回异常。');
-        return rows[0]||null;
-      },
-      async login(event) {
-        event.preventDefault();if(this.busy) return;
-        if(this.dirty) { this.message('请先重试保存，或下载备份后退出，再重新登录。',true);return; }
-        this.busy=true;this.lock(true);this.message('正在验证账号并读取云端…');
-        try {
-          const password=document.getElementById('cloud-password').value;
-          const session=await this.request('/auth/v1/token?grant_type=password',{method:'POST',auth:false,
-            body:{email:document.getElementById('cloud-email').value.trim(),password}});
-          document.getElementById('cloud-password').value='';
-          this.session={...session,expiresAt:Date.now()+session.expires_in*1000};
-          document.getElementById('cloud-logout').hidden=false;
-          const row=await this.loadRemote();
-          document.getElementById('cloud-login').hidden=true;
-          this.conflict=false;this.draft=this.readDraft();
-          if(this.draft && this.draft.owner!==this.session.user.id) this.draft=null;
-          if(row) {
-            this.revision=row.revision;
-            if(this.draft) {
-              this.adopt(this.draft.payload);
-              this.conflict=this.draft.revision!==row.revision;
-              document.getElementById('cloud-recover').hidden=this.conflict;
-              document.getElementById('cloud-reload').hidden=false;
-              this.status('发现未同步修改',true);
-              this.message(this.conflict?'云端版本已变化。请备份当前未同步修改，再读取云端；不会自动覆盖。':'发现上次未同步修改。可恢复并上传，或备份后读取云端。',true);
-            } else {
-              this.adopt(row.payload);this.lock(false);this.status('已从云端读取');
-              this.message('已登录。修改后自动保存到云端，历史版本也会保留。');
-            }
-          } else {
-            this.revision=0;
-            if(this.draft) this.adopt(this.draft.payload);
-            document.getElementById('cloud-migrate').hidden=false;
-            this.status('尚未迁移到云端',true);
-            this.message(`云端还没有数据。当前预览共 ${Object.keys(store.months).length} 个月；核对后点击“下载备份并迁移到云端”。若这里是初始示例，请回到原浏览器迁移真实数据。`);
-          }
-        } catch(error) {
-          this.message(error.message,true);this.status('云端连接未完成',true);
-        } finally { this.busy=false;document.getElementById('cloud-password').value=''; }
-      },
-      async migrate() {
-        if(this.busy||!this.session||this.revision!==0) return;
-        if(!confirm('请确认下方是你要迁移的全部月份数据。将先下载JSON备份，再上传到空的云端。继续吗？')) return;
-        this.backup();this.keepDraft();this.busy=true;
-        this.status('正在迁移，请勿关闭页面');
-        try {
-          const payload=this.normalize(store);
-          await this.request('/rest/v1/demand_dashboard_state',{method:'POST',
-            body:{owner_id:this.session.user.id,payload},headers:{Prefer:'return=representation'}});
-          const row=await this.loadRemote();
-          if(!row || stableJson(row.payload)!==stableJson(payload)) throw new Error('迁移后读取校验失败，请保留下载的备份，勿重复覆盖云端。');
-          this.revision=row.revision;this.adopt(row.payload);this.clearDraft();this.dirty=false;
-          document.getElementById('cloud-migrate').hidden=true;this.lock(false);
-          this.status('已保存到云端');this.message('迁移及读取校验完成。原浏览器数据和下载备份均保留，后续以云端为准。');
-        } catch(error) {
-          this.message(`${error.message} 可退出后重新登录，检查云端是否已收到数据。`,true);
-          this.status('迁移未完成确认',true);
-        } finally { this.busy=false; }
-      },
-      queueSave() {
-        if(!this.ready||!this.session) return false;
-        this.dirty=true;this.keepDraft();this.status('有修改待同步…');
-        clearTimeout(this.timer);this.timer=setTimeout(()=>this.flush(),600);return true;
-      },
-      async flush() {
-        if(this.busy||!this.dirty||!this.ready||!this.session) return;
-        clearTimeout(this.timer);this.busy=true;
-        const payload=structuredClone(store),version=this.revision;
-        this.status('正在保存到云端…');
-        try {
-          const rows=await this.request(`/rest/v1/demand_dashboard_state?owner_id=eq.${encodeURIComponent(this.session.user.id)}&revision=eq.${version}`,{
-            method:'PATCH',body:{payload},headers:{Prefer:'return=representation'}});
-          if(!rows?.length) {
-            this.conflict=true;this.lock(true);
-            document.getElementById('cloud-reload').hidden=false;
-            throw new Error('云端版本已被其他页面更新。已停止覆盖；请备份当前数据，再读取云端。');
-          }
-          if(stableJson(rows[0].payload)!==stableJson(payload)||rows[0].revision<=version) throw new Error('云端保存校验未通过，请重试或重新登录。');
-          this.revision=rows[0].revision;
-          this.dirty=stableJson(store)!==stableJson(payload);
-          document.getElementById('cloud-retry').hidden=true;
-          if(this.dirty) { this.keepDraft();this.status('有后续修改待同步…'); }
-          else { this.clearDraft();this.status('已保存到云端');this.message('全部修改已保存到 Supabase。'); }
-        } catch(error) {
-          this.keepDraft();this.status('未同步到云端，请勿关闭页面',true);this.message(error.message,true);
-          document.getElementById('cloud-retry').hidden=this.conflict;
-          this.busy=false;return;
-        }
-        this.busy=false;
-        if(this.dirty) this.timer=setTimeout(()=>this.flush(),100);
-      },
-      async reloadRemote() {
-        if(this.busy||!this.session) return;
-        if(!confirm('将先下载当前数据备份，然后用云端版本替换当前预览。继续吗？')) return;
-        this.backup();this.busy=true;this.lock(true);clearTimeout(this.timer);
-        try {
-          const row=await this.loadRemote();
-          if(!row) throw new Error('云端没有数据，请退出并重新登录后迁移。');
-          this.adopt(row.payload);this.revision=row.revision;this.dirty=false;this.conflict=false;this.clearDraft();
-          ['cloud-reload','cloud-recover','cloud-retry'].forEach(id=>document.getElementById(id).hidden=true);
-          this.lock(false);this.status('已从云端读取');this.message('已读取云端最新数据；之前的当前数据已下载备份。');
-        } catch(error) { this.message(error.message,true); }
-        finally { this.busy=false; }
-      },
-      recover() {
-        if(this.busy||!this.draft||this.conflict) return;
-        this.adopt(this.draft.payload);this.lock(false);
-        document.getElementById('cloud-recover').hidden=true;document.getElementById('cloud-reload').hidden=true;
-        this.queueSave();this.flush();
-      },
-      async logout() {
-        if(this.busy) { this.message('请求处理中，请稍候再退出。',true);return; }
-        if((this.dirty||this.draft) && !confirm('有未同步修改。退出前会下载当前数据备份，仍要退出吗？')) return;
-        if(this.dirty||this.draft) this.backup();
-        clearTimeout(this.timer);this.lock(true);
-        try { if(this.session) await this.request('/auth/v1/logout?scope=local',{method:'POST'}); } catch(_) {}
-        this.session=null;this.dirty=false;this.conflict=false;
-        ['cloud-migrate','cloud-recover','cloud-reload','cloud-retry','cloud-logout'].forEach(id=>document.getElementById(id).hidden=true);
-        document.getElementById('cloud-login').hidden=false;
-        this.status('已退出云端');this.message('已退出。当前数据只读，重新登录后读取云端。');
       }
-    };
-    function stableJson(value) {
-      if(Array.isArray(value)) return '['+value.map(stableJson).join(',')+']';
-      if(value && typeof value==='object') return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+stableJson(value[k])).join(',')+'}';
-      return JSON.stringify(value);
-    }
-    document.getElementById('cloud-login').addEventListener('submit',e=>cloud.login(e));
-    document.getElementById('cloud-backup').addEventListener('click',()=>cloud.backup());
-    document.getElementById('cloud-migrate').addEventListener('click',()=>cloud.migrate());
-    document.getElementById('cloud-recover').addEventListener('click',()=>cloud.recover());
-    document.getElementById('cloud-reload').addEventListener('click',()=>cloud.reloadRemote());
-    document.getElementById('cloud-retry').addEventListener('click',()=>cloud.flush());
-    document.getElementById('cloud-logout').addEventListener('click',()=>cloud.logout());
-    window.addEventListener('online',()=>{if(cloud.dirty&&!cloud.conflict) cloud.flush();});
-    window.addEventListener('beforeunload',e=>{
-      if(cloud.dirty||cloud.busy||cloud.draft) { e.preventDefault();e.returnValue=''; }
     });
     render();
+    cloud.start();
   </script>
 </body>
 </html>
