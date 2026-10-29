@@ -285,7 +285,23 @@
     </div>
   </main>
 
-  <script src="./shared-cloud.js"></script>
+  <script>
+    // Report script/cache failures before the application can start its own status UI.
+    window.dashboardBooted=false;
+    function reportDashboardBootFailure() {
+      if(window.dashboardBooted) return;
+      document.getElementById('save-status').textContent='页面加载失败';
+      document.getElementById('cloud-message').textContent='页面脚本未能完成加载，可能是网络或旧缓存。请点击重新加载；不会清除你的数据。';
+      const retry=document.getElementById('cloud-retry');
+      retry.hidden=false;retry.textContent='重新加载页面';
+    }
+    window.addEventListener('error',reportDashboardBootFailure);
+    setTimeout(reportDashboardBootFailure,10000);
+    document.getElementById('cloud-retry').addEventListener('click',()=>{
+      if(!window.dashboardBooted) location.reload();
+    });
+  </script>
+  <script src="./shared-cloud.js?v=20261029-3" onerror="reportDashboardBootFailure()"></script>
   <script>
     // Public source contains only an empty template, never the user's business data.
     const initial = ['CB','CF','CR','DF','JC','VF','LS'].map(product=>({
@@ -1010,6 +1026,7 @@
     });
     render();
     cloud.start();
+    window.dashboardBooted=true;
   </script>
 </body>
 </html>

@@ -7,7 +7,7 @@ function createSharedCloud(app) {
     ready:false,revision:0,dirty:false,busy:false,conflict:false,timer:null,poll:null,base:null,draft:null,
     cacheKey:'demand-shared-cache-v1',draftKey:'demand-shared-draft-v1',selectionKey:'demand-shared-selected-month',
     deviceKey:'demand-shared-device-id',deviceId:null,initialized:false,lastSeen:null,
-    archivesBusy:false,archiveCount:0,
+    archivesBusy:false,archiveCount:0,archiveRows:[],
     el(id) { return document.getElementById(id); },
     message(text,error=false) { const e=this.el('cloud-message');e.textContent=text;e.dataset.error=String(error); },
     status(text,error=false) { const e=this.el('save-status');e.textContent=text;e.dataset.error=String(error); },
@@ -15,14 +15,17 @@ function createSharedCloud(app) {
     read(key) { try { return JSON.parse(localStorage.getItem(key)); } catch(_) { return null; } },
     write(key,value) { try { localStorage.setItem(key,JSON.stringify(value));return true; } catch(_) { return false; } },
     async request(path,body) {
-      let response;
+      let response,text;
+      const controller=new AbortController();
+      const timeout=setTimeout(()=>controller.abort(),10000);
       try {
         response=await fetch(this.url+path,{
           method:body===undefined?'GET':'POST',headers:{apikey:this.key,'Content-Type':'application/json'},
-          ...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(15000),cache:'no-store'
+          ...(body===undefined?{}:{body:JSON.stringify(body)}),signal:controller.signal,cache:'no-store'
         });
-      } catch(_) { throw new Error('网络异常：尚未同步。修改已保留，请联网后重试。'); }
-      const text=await response.text();
+        text=await response.text();
+      } catch(_) { throw new Error('云端连接失败或超过10秒：尚未同步。已有本地数据会保留，请检查网络后重试。'); }
+      finally {clearTimeout(timeout);}
       let result;try { result=JSON.parse(text); } catch(_) { throw new Error('云端响应异常，未确认同步成功。'); }
       if(!response.ok) {
         const raw=result.message||result.code||'';
@@ -272,6 +275,7 @@ function createSharedCloud(app) {
       try {
         const rows=await this.request('/rest/v1/demand_shared_archives?select=id,month,version,name&order=id.desc&limit=50');
         this.archiveCount=rows.length;
+        this.archiveRows=rows;
         this.el('archive-clear').hidden=rows.length<2;
         const list=this.el('archive-list');list.replaceChildren();
         for(const row of rows) {
@@ -279,12 +283,8 @@ function createSharedCloud(app) {
           button.textContent=row.name||`${row.month.slice(2).replace('-','')}-版本${row.version}`;
           button.dataset.archiveId=row.id;
           button.addEventListener('click',()=>this.archiveAction('restore',row));
-          const item=document.createElement('span');item.style.cssText='display:inline-flex;gap:4px;align-items:center;max-width:100%';
           button.style.cssText='white-space:normal;overflow-wrap:anywhere';
-          const rename=document.createElement('button');rename.className='btn';rename.textContent='改名';
-          rename.setAttribute('aria-label',`修改 ${button.textContent} 的名称`);
-          rename.addEventListener('click',()=>this.archiveAction('rename',row));
-          item.append(button,rename);list.appendChild(item);
+          list.appendChild(button);
         }
         this.el('archive-message').textContent=rows.length?'点击版本直接使用，所有访问者同步更新。':'';
       } catch(error) {
@@ -298,11 +298,14 @@ function createSharedCloud(app) {
       }
       if(action==='clear'&&this.archiveCount<2) return;
       let name=null;
-      if(action==='create'||action==='rename') {
-        name=prompt(action==='create'?'存档名称（留空自动按月份编号）':'修改存档名称',action==='rename'?(row.name||`${row.month.slice(2).replace('-','')}-版本${row.version}`):'');
+      if(action==='create') {
+        const month=app.get().selectedMonth;
+        const nextVersion=Math.max(0,...this.archiveRows.filter(r=>r.month===month).map(r=>Number(r.version)))+1;
+        const defaultName=`${month.slice(2).replace('-','')}-版本${nextVersion}`;
+        name=prompt('存档名称（确认保存，或取消存档）',defaultName);
         if(name===null) return;
         name=name.trim();
-        if(name.length>80||(action==='rename'&&!name)) {this.message('名称须为1–80个字符。',true);return;}
+        if(name.length>80||!name) {this.message('名称须为1–80个字符。',true);return;}
       }
       if(action==='clear'&&!confirm('清除顶部全部存档版本？当前正在使用的数据保持不变，后台恢复记录仍保留。')) return;
       // Never discard an unsynced edit when switching versions or changing archive metadata.
