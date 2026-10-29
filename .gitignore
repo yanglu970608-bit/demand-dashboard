@@ -1,0 +1,12 @@
+# Publish only reviewed application sources. Never commit local business artifacts.
+/*
+!/.gitignore
+!/demand-dashboard.html
+!/shared-cloud.js
+!/supabase-shared.sql
+!/README.md
+!/docs/
+/docs/*
+!/docs/index.html
+!/docs/shared-cloud.js
+!/docs/.nojekyll

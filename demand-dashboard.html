@@ -1,0 +1,1248 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>需求量看板</title>
+  <style>
+    :root { --bg:#f5f7fb; --panel:#fff; --text:#172033; --muted:#6b7280; --line:#e5e7eb; --brand:#3156a3; --brand-soft:#eaf0ff; --plan:#5b7cda; --director:#2f9e73; --kol:#e09a35; --image:#9a6ad8; --cross:#df6b6b; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 "Microsoft YaHei", system-ui, sans-serif; }
+    button, input, select { font:inherit; }
+    button { cursor:pointer; }
+    .shell { max-width:1280px; margin:auto; padding:28px 22px 48px; }
+    header { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; margin-bottom:22px; }
+    h1 { margin:0; font-size:26px; }
+    .subtitle { color:var(--muted); margin-top:5px; }
+    .btn { border:1px solid var(--line); background:var(--panel); color:var(--text); border-radius:8px; padding:8px 13px; }
+    .btn.primary { background:var(--brand); border-color:var(--brand); color:white; }
+    .tabs { display:flex; gap:6px; margin-bottom:18px; }
+    .tab { border:0; background:transparent; color:var(--muted); padding:8px 14px; border-radius:8px; }
+    .tab.active { background:var(--brand-soft); color:var(--brand); font-weight:600; }
+    .stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:18px; }
+    .stat, .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; }
+    .stat { padding:16px 18px; }
+    .stat-label { color:var(--muted); font-size:13px; }
+    .stat-value { font-size:25px; font-weight:700; margin-top:3px; }
+    .panel { padding:18px; }
+    .panel-head { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
+    .panel h2 { margin:0; font-size:17px; }
+    .hint { color:var(--muted); font-size:12px; }
+    .table-wrap { overflow-x:auto; }
+    table { width:100%; border-collapse:collapse; min-width:940px; }
+    #edit-view table { min-width:680px; border-collapse:separate; border-spacing:0; }
+    #editor-foot th,#editor-foot td,#non-slots-foot th,#non-slots-foot td { background:var(--brand-soft); border-top:2px solid #d1dcf5; font-weight:700; }
+    #editor-foot th:first-child,#non-slots-foot th:first-child { border-radius:12px 0 0 12px; }
+    #editor-foot td:last-child,#non-slots-foot td:last-child { border-radius:0 12px 12px 0; }
+    .weekly-value,.quantity { display:inline-flex; align-items:center; justify-content:center; min-width:76px; height:35px; padding:6px 7px; font-weight:600; }
+    #editor-body td,#editor-foot td,#non-slots-body td,#non-slots-foot td { vertical-align:top; }
+    th, td { padding:10px 8px; border-bottom:1px solid var(--line); text-align:center; white-space:nowrap; }
+    th { color:var(--muted); font-size:12px; font-weight:600; background:#fafbfc; }
+    th:first-child, td:first-child { text-align:center; }
+    tbody tr:last-child td { border-bottom:0; }
+    input[type=number] { width:76px; border:1px solid #d7dce5; border-radius:6px; padding:6px 7px; text-align:center; background:white; color:var(--text); }
+    input[type=number]:not(:focus) { border-color:transparent; background:transparent; appearance:textfield; cursor:text; }
+    input[type=number]:not(:focus)::-webkit-inner-spin-button,
+    input[type=number]:not(:focus)::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
+    input[type=number]:hover { border-color:#d7dce5; }
+    .save-tools,.product-options { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .btn:disabled { cursor:default; opacity:.45; }
+    .product-filter summary { cursor:pointer; white-space:nowrap; list-style:none; display:flex; align-items:center; gap:12px; font-weight:600; }
+    .product-filter summary::-webkit-details-marker { display:none; }
+    .product-filter summary::after { content:""; width:7px; height:7px; border-right:1.5px solid #45617d; border-bottom:1.5px solid #45617d; transform:rotate(45deg); margin-top:-4px; }
+    .product-filter[open] summary::after { transform:rotate(225deg); margin-top:4px; }
+    .product-filter { position:relative; margin-left:auto; border:0; background:#f6f7fa; border-radius:12px; padding:12px 16px; }
+    .product-menu { position:absolute; top:calc(100% + 8px); right:0; z-index:10; width:min(280px,calc(100vw - 40px)); padding:14px; border:1px solid #e3e7ee; border-radius:16px; background:#fff; box-shadow:0 10px 26px #1720331a; }
+    .product-options { margin-top:10px; }
+    .product-options label { display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
+    #product-options { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:0; }
+    #product-options label { position:relative; justify-content:center; height:38px; border-radius:10px; color:#45617d; }
+    #product-options label:has(input:checked) { background:#050505; color:white; }
+    #product-options label:focus-within { outline:2px solid #7895bc; outline-offset:2px; }
+    #product-options input { position:absolute; opacity:0; width:100%; height:100%; inset:0; margin:0; cursor:pointer; }
+    .product-menu .btn { border:0; background:#f6f7fa; border-radius:10px; flex:1; }
+    .filter-summary { margin:0 0 12px; }
+    #empty-products td { padding:30px 8px; color:var(--muted); }
+    #save-status[data-error=true] { color:#d24f4f; }
+    .cloud-panel { margin-bottom:18px; padding:16px 18px; background:#fff; border:1px solid var(--line); border-radius:12px; }
+    .cloud-panel h2 { margin:0 0 8px; font-size:17px; }
+    .cloud-form,.cloud-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px; }
+    .cloud-form label { display:flex; gap:6px; align-items:center; }
+    .cloud-form input { width:220px; max-width:100%; border:1px solid #d7dce5; border-radius:8px; padding:8px; }
+    #cloud-message { margin-top:8px; color:var(--muted); overflow-wrap:anywhere; }
+    #cloud-message[data-error=true] { color:#bc3636; }
+    #dashboard-content[inert] { opacity:.6; }
+    @media(max-width:480px) { .cloud-form label,.cloud-form input { width:100%; } .cloud-form label { flex-wrap:wrap; } }
+    .stat,.role-grid,.weeks,.product-total { text-align:center; font-variant-numeric:tabular-nums; }
+    .product-total { display:inline-block; min-width:64px; }
+    .month-controls { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+    .control-label { font-size:17px; font-weight:700; }
+    .month-picker { position:relative; width:280px; }
+    .month-bar { display:flex; gap:4px; padding:4px; background:#fff; border-radius:12px; box-shadow:0 1px 3px #1720330a; }
+    .arrow-btn { width:32px; height:40px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; border:0; border-radius:9px; background:transparent; color:#45617d; }
+    .arrow-btn:hover { background:#f6f7fa; }
+    .arrow-btn:disabled { opacity:.25; cursor:default; }
+    .arrow-btn svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+    #month-trigger { flex:1; border:0; border-radius:10px; background:#fff; color:#101827; font-weight:700; }
+    .month-popup { position:absolute; top:calc(100% + 6px); left:10px; width:260px; padding:10px 12px 12px; z-index:20; background:#fff; border:1px solid #e3e7ee; border-radius:16px; box-shadow:0 10px 26px #1720331a; }
+    .year-bar { display:flex; align-items:center; justify-content:space-between; margin-bottom:2px; }
+    .year-bar strong { font-size:14px; color:#101827; }
+    .month-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px 8px; }
+    .month-grid button { height:38px; border:0; border-radius:10px; color:#45617d; background:transparent; }
+    .month-grid button:hover { background:#f6f7fa; }
+    .month-grid button[aria-pressed=true] { background:#050505; color:white; }
+    .month-grid button:disabled { opacity:.3; cursor:default; }
+    .date-range-fields { display:flex; gap:16px; }
+    .date-picker { position:relative; }
+    .date-field { position:relative; width:192px; height:44px; border:0; border-radius:14px; background:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; color:#171c26; }
+    .date-field svg { position:absolute; left:12px; width:16px; height:16px; fill:none; stroke:#9aa3b2; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+    .date-field:focus-within { outline:2px solid #b9c9f5; outline-offset:2px; }
+    .date-field span { padding-left:18px; font-variant-numeric:tabular-nums; pointer-events:none; }
+    .date-field span[data-empty=true] { color:#8a94a4; font-weight:400; }
+    .date-popup { position:absolute; top:calc(100% + 8px); left:0; z-index:25; width:288px; padding:12px; border:1px solid #e3e7ee; border-radius:16px; background:#fff; box-shadow:0 10px 26px #1720331a; }
+    .date-picker:last-child .date-popup { left:auto; right:0; }
+    .date-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; text-align:center; }
+    .date-grid .day-name { color:#8a94a4; font-size:12px; padding:6px 0; }
+    .date-grid button { height:33px; border:0; border-radius:9px; background:transparent; color:#45617d; }
+    .date-grid button:hover { background:#f6f7fa; }
+    .date-grid button.outside-month { color:#b4bdca; }
+    .date-grid button.in-range { background:#f1f3f8; }
+    .date-grid button[aria-pressed=true] { background:#050505; color:#fff; }
+    .date-grid button:focus-visible { outline:2px solid #7895bc; }
+    #non-slots-view { margin-top:18px; }
+    #non-slots-view table { min-width:520px; border-collapse:separate; border-spacing:0; }
+    .readonly { color:var(--text); }
+    #notice { color:var(--brand); margin:8px 0; }
+    @media print { .month-controls,#notice,.save-tools,.product-filter,.filter-summary { display:none; } }
+    input[type=number]:focus { outline:2px solid #b9c9f5; border-color:var(--brand); }
+    .derived { font-weight:700; }
+    .delta.down { color:#d24f4f; } .delta.up { color:#21845e; }
+    .role-change { margin-top:5px; font-size:12px; color:var(--muted); font-weight:400; text-align:center; }
+    .role-change:empty { display:none; }
+    .compare-controls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+    .compare-controls .btn[aria-pressed=true] { background:var(--brand-soft); border-color:var(--brand); color:var(--brand); }
+    #range-status { width:100%; }
+    .legend { display:flex; gap:14px; flex-wrap:wrap; color:var(--muted); font-size:12px; }
+    .dot { display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:5px; }
+    .cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+    .product { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+    .product-top { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:13px; }
+    .product-name { font-size:18px; font-weight:700; }
+    .product-total { font-size:22px; font-weight:700; color:var(--brand); }
+    .bar { height:10px; display:flex; overflow:hidden; border-radius:5px; background:#eef0f4; margin-bottom:13px; }
+    .bar span { min-width:0; }
+    .role-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-bottom:13px; }
+    .role-label { color:var(--muted); font-size:11px; }
+    .role-value { font-weight:700; margin-top:2px; }
+    .weeks { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding-top:12px; border-top:1px solid var(--line); }
+    .week-item { background:#f8f9fc; border-radius:8px; padding:9px; }
+    .week-title { color:var(--muted); font-size:11px; }
+    .week-value { font-weight:700; margin-top:2px; }
+    .empty-note { display:none; }
+    .group-summary { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px; }
+    .group-summary .stat-value { font-size:21px; }
+    .gap-ok { color:#21845e; } .gap-risk { color:#d24f4f; }
+    .gap-balanced { color:var(--muted); }
+    #chengdu-alert { margin:0 0 16px; padding:10px 14px; border:1px solid #f1c6c6; border-radius:10px; background:#fff2f2; color:#bc3636; font-weight:600; }
+    .pending-time { color:#a86508; font-size:12px; font-weight:500; }
+    [data-ctime-note]:not([hidden]) { display:block; margin-top:4px; }
+    .group-products { padding:6px; border-radius:10px; display:flex; flex-wrap:nowrap; justify-content:center; align-items:center; gap:6px; min-height:48px; }
+    #group-view table { border-collapse:separate; border-spacing:0; }
+    #group-view th:nth-child(-n+3),#group-view td:nth-child(-n+3) { position:sticky; z-index:2; background:#fff; }
+    #group-view th:nth-child(-n+3) { background:#fafbfc; z-index:3; }
+    #group-view tr>:nth-child(1) { left:0; min-width:56px; width:56px; max-width:56px; }
+    #group-view tr>:nth-child(2) { left:56px; min-width:70px; width:70px; max-width:70px; }
+    #group-view tr>:nth-child(3) { left:126px; min-width:var(--products-width,170px); width:var(--products-width,170px); box-shadow:2px 0 0 var(--line); }
+    #group-view [data-gderived="demand"],#group-view [data-gderived="total"] { font-weight:400; }
+    #chengdu-view { margin-top:18px; }
+    #chengdu-view table { min-width:1120px; border-collapse:separate; border-spacing:0; }
+    #chengdu-view .c-fixed { position:sticky; z-index:2; background:#fff; }
+    #chengdu-view th.c-fixed { z-index:3; background:#fafbfc; }
+    #chengdu-view .c1 { left:0; width:80px; min-width:80px; max-width:80px; }
+    #chengdu-view .c2 { left:80px; width:80px; min-width:80px; max-width:80px; }
+    #chengdu-view .c3 { left:160px; width:90px; min-width:90px; max-width:90px; box-shadow:2px 0 0 var(--line); }
+    #week-note { margin:-4px 0 12px; }
+    .group-products.drag-over { background:var(--brand-soft); outline:2px dashed var(--brand); }
+    .group-product { min-width:42px; padding:7px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--text); font-weight:700; cursor:grab; text-align:center; }
+    .group-product:active { cursor:grabbing; }
+    .group-products .empty-group { align-self:center; color:var(--muted); white-space:normal; font-size:12px; }
+    [hidden] { display:none !important; }
+    @media (max-width:800px) { .stats { grid-template-columns:repeat(2,1fr); } .cards { grid-template-columns:1fr; } .group-summary { grid-template-columns:1fr; } header { align-items:flex-start; flex-direction:column; } }
+    @media (max-width:480px) { .shell { padding:20px 14px 36px; } .stats { grid-template-columns:1fr 1fr; } .role-grid { grid-template-columns:repeat(3,1fr); } .weeks { grid-template-columns:1fr; } }
+    @media (max-width:480px) { .compare-controls { gap:6px; flex-wrap:nowrap; } .compare-controls>.btn { padding:8px; white-space:nowrap; } .product-filter { padding:8px; } }
+    @media (max-width:800px) { .date-range-fields { width:100%; } .date-field { width:192px; max-width:calc((100vw - 44px)/2); } }
+    @media print { body { background:white; } .shell { max-width:none; padding:0; } .tabs { display:none !important; } .panel,.stat { break-inside:avoid; box-shadow:none; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div><h1>需求量看板</h1><div class="subtitle">本月总量、分岗位配置与分周大致量</div></div>
+      <div class="save-tools"><span class="hint" id="save-status" role="status">未登录云端</span></div>
+    </header>
+
+    <section class="cloud-panel" aria-label="个人云端存储">
+      <h2>个人云端存储</h2>
+      <div class="hint">仅授权账号可访问。登录后以 Supabase 云端数据为准；旧浏览器数据暂保留用于迁移。</div>
+      <form class="cloud-form" id="cloud-login">
+        <label>邮箱<input id="cloud-email" type="email" required autocomplete="username"></label>
+        <label>密码<input id="cloud-password" type="password" required autocomplete="current-password"></label>
+        <button class="btn primary" type="submit">登录云端</button>
+      </form>
+      <div id="cloud-message" role="status" aria-live="polite">尚未连接。先完成 Supabase 建表和账号授权，再登录。下方为本地迁移预览。</div>
+      <div class="cloud-actions">
+        <button class="btn" id="cloud-backup">下载当前数据备份</button>
+        <button class="btn primary" id="cloud-migrate" hidden>下载备份并迁移到云端</button>
+        <button class="btn" id="cloud-recover" hidden>恢复未同步修改</button>
+        <button class="btn" id="cloud-reload" hidden>备份当前数据并读取云端</button>
+        <button class="btn" id="cloud-retry" hidden>重试云端保存</button>
+        <button class="btn" id="cloud-logout" hidden>退出登录</button>
+      </div>
+    </section>
+    <div id="dashboard-content" inert>
+    <div class="month-controls">
+      <span class="control-label">月份</span><input type="month" id="month-select" min="2026-08" max="9999-12" hidden>
+      <div class="month-picker">
+        <div class="month-bar">
+          <button class="arrow-btn" id="previous-month" aria-label="上个月"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg></button>
+          <button id="month-trigger" aria-expanded="false" aria-controls="month-popup" aria-label="选择月份"></button>
+          <button class="arrow-btn" id="next-month" aria-label="下个月"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button>
+        </div>
+        <div class="month-popup" id="month-popup" hidden>
+          <div class="year-bar">
+            <button class="arrow-btn" id="previous-year" aria-label="上一年"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5"/></svg></button>
+            <strong id="picker-year"></strong>
+            <button class="arrow-btn" id="next-year" aria-label="下一年"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 7 5 5-5 5"/></svg></button>
+          </div>
+          <div class="month-grid" id="month-grid"></div>
+        </div>
+      </div>
+      <span class="control-label">日期范围</span>
+      <div class="date-range-fields">
+        <div class="date-picker"><button class="date-field" data-open-date="start" aria-label="选择开始日期" aria-expanded="false" aria-controls="date-popup"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 10h16M8 14h1m3 0h1m3 0h1M8 17h1m3 0h1"/></svg><span id="range-start-label">开始日期</span></button><input type="date" id="range-start" hidden></div>
+        <div class="date-picker"><button class="date-field" data-open-date="end" aria-label="选择结束日期" aria-expanded="false" aria-controls="date-popup"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 10h16M8 14h1m3 0h1m3 0h1M8 17h1m3 0h1"/></svg><span id="range-end-label">结束日期</span></button><input type="date" id="range-end" hidden></div>
+      </div>
+      <div class="date-popup" id="date-popup" hidden>
+        <div class="year-bar"><button class="arrow-btn" id="date-prev" aria-label="日历上个月"><svg viewBox="0 0 24 24"><path d="m14 7-5 5 5 5"/></svg></button><strong id="date-month-label"></strong><button class="arrow-btn" id="date-next" aria-label="日历下个月"><svg viewBox="0 0 24 24"><path d="m10 7 5 5-5 5"/></svg></button></div>
+        <div class="date-grid" id="date-grid"></div>
+      </div>
+    </div>
+    <div class="hint" id="range-status" role="status"></div>
+    <div id="notice" role="status" aria-live="polite"></div>
+    <div id="chengdu-alert" role="status" aria-live="polite" hidden>成都已超量</div>
+    <nav class="tabs" aria-label="视图切换">
+      <button class="tab active" data-view="edit-view">编辑数据</button>
+      <button class="tab" data-view="group-view">小组调量</button>
+    </nav>
+
+    <section class="stats" id="stats"></section>
+
+    <section class="panel" id="edit-view">
+      <div class="panel-head"><h2>SLOTS产品分岗位需求量</h2><span class="hint">总量自动汇总；岗位下方显示相对上月的增减</span></div>
+      <div class="compare-controls" aria-label="对比口径">
+        <button class="btn" data-compare="month" aria-pressed="true">月度对比</button>
+        <button class="btn" data-compare="week" aria-pressed="false">每周对比</button>
+        <details class="product-filter"><summary id="product-filter-title">产品筛选（全部）</summary>
+          <div class="product-menu">
+          <div class="product-options" id="product-options"></div>
+          <div class="product-options"><button class="btn" id="select-all-products">全选</button><button class="btn" id="clear-products">清空</button></div>
+          </div>
+        </details>
+      </div>
+      <p id="week-note" class="hint" hidden></p>
+      <p class="hint filter-summary" id="filter-summary" role="status"></p>
+      <div class="table-wrap"><table>
+        <thead id="editor-head"></thead>
+        <tbody id="editor-body"></tbody>
+        <tfoot id="editor-foot"></tfoot>
+      </table></div>
+    </section>
+
+    <section class="panel" id="non-slots-view">
+      <div class="panel-head"><h2>非SLOTS产品需求量</h2></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th scope="col">产品</th><th scope="col">需求量/月</th><th scope="col">预留制作时间/月</th></tr></thead>
+        <tbody id="non-slots-body"></tbody>
+        <tfoot id="non-slots-foot"></tfoot>
+      </table></div>
+    </section>
+
+    <section class="panel" id="group-view" hidden>
+      <div class="panel-head"><h2>北京玩法小组需求量调整</h2><span class="hint">产品需求取“策划＋跨界”，其余参数均可调整</span></div>
+      <div class="group-summary" id="group-summary"></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>小组</th><th>负责人</th><th>产品</th><th id="group-month">产品需求</th><th>通用创新/月</th><th>Playable/月</th><th>小组总量/月</th><th>成都移动/月</th><th>成都单周移动/天</th><th>实际小组总量</th><th>人员承载力</th><th>余量/缺口</th><th>单需求制作时间（天）</th><th>人员数量</th><th>全职/组长负责量（天）</th><th>请假预留（天）</th><th>临时需求预留（天）</th></tr></thead>
+        <tbody id="group-body"></tbody>
+      </table></div>
+    </section>
+
+    <section class="panel" id="chengdu-view" hidden>
+      <div class="panel-head"><h2>成都玩法小组需求量调整</h2><span class="hint">SLOTS取北京成都移动合计；非SLOTS自动汇总至编辑数据</span></div>
+      <div class="group-summary" id="chengdu-summary"></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="c-fixed c1">小组</th><th class="c-fixed c2">负责人</th><th class="c-fixed c3">产品</th><th>产品需求</th><th>产品制作天数</th><th>单需求制作时间（天）</th><th>应制作天数（天）</th><th>人员承载力（天）</th><th>余量/缺口（天）</th><th>人员数量</th><th>预留请假时间（天）</th></tr></thead>
+        <tbody id="chengdu-body"></tbody>
+      </table></div>
+    </section>
+    </div>
+  </main>
+
+  <script>
+    // Public source contains only an empty template, never the user's business data.
+    const initial = ['CB','CF','CR','DF','JC','VF','LS'].map(product=>({
+      product,july:0,director:0,kol:0,plan:0,image:0,cross:0
+    }));
+    const numericKeys = ['director','kol','plan','image','cross'];
+    const nonSlotsInitial=['TU+MT','RD','DEER','CBR+BJO+SORT+HOLE'].map(product=>({product,demand:0,reservedTime:0}));
+    const roleLabels={director:'编导',kol:'KOL',plan:'策划',image:'策划-图片类',cross:'跨界'};
+    function visibleRoleKeys() { return compareMode==='week'?['director','plan','cross']:numericKeys; }
+    const groupInitial = [['CF'],['CB'],['VF','LS'],['JC','CR','DF']].map((products,i)=>({
+      name:`小组${i+1}`,owner:`负责人${i+1}`,products,innovation:0,playable:0,chengdu:0,
+      avgTime:1,people:0,fulltime:0,workdays:0,leave:0,revision:0,other:0,special:0
+    }));
+    const storageKey='demand-dashboard-months-v2';
+    const monthLabel=m=>`${m.slice(0,4)}年${Number(m.slice(5))}月`;
+    function previousMonth(m) {
+      const [y,n]=m.split('-').map(Number);
+      return n===1 ? `${y-1}-12` : `${y}-${String(n-1).padStart(2,'0')}`;
+    }
+    function validMonth(m) { return /^\d{4}-(0[1-9]|1[0-2])$/.test(m) && m>='2026-08'; }
+    let store=loadMonths();
+    let selectedMonth=store.selectedMonth;
+    let data=store.months[selectedMonth].data;
+    let groups=store.months[selectedMonth].groups;
+    let compareMode='month';
+    let currentView='edit-view';
+    let pickerYear=Number(selectedMonth.slice(0,4));
+    let dateTarget='start', dateViewMonth=selectedMonth;
+    function closeDatePicker() {
+      document.getElementById('date-popup').hidden=true;
+      document.querySelectorAll('[data-open-date]').forEach(el=>el.setAttribute('aria-expanded','false'));
+    }
+    function renderDateCalendar() {
+      document.getElementById('date-month-label').textContent=monthLabel(dateViewMonth);
+      document.getElementById('date-prev').disabled=dateViewMonth==='1900-01';
+      document.getElementById('date-next').disabled=dateViewMonth==='9999-12';
+      const [y,m]=dateViewMonth.split('-').map(Number), first=new Date(Date.UTC(y,m-1,1));
+      const offset=(first.getUTCDay()+6)%7;
+      const selected=document.getElementById(`range-${dateTarget}`).value;
+      const start=document.getElementById('range-start').value, end=document.getElementById('range-end').value;
+      document.getElementById('date-grid').innerHTML=['一','二','三','四','五','六','日'].map(day=>`<span class="day-name">${day}</span>`).join('')+
+        Array.from({length:42},(_,i)=>{
+          const date=new Date(Date.UTC(y,m-1,1-offset+i)), value=date.toISOString().slice(0,10);
+          return `<button data-pick-date="${value}" aria-label="${value}" aria-pressed="${value===selected}" class="${value.slice(0,7)!==dateViewMonth?'outside-month':''} ${start && end && value>=start && value<=end?'in-range':''}" ${value<'1900-01-01'||value>'9999-12-31'?'disabled':''}>${date.getUTCDate()}</button>`;
+        }).join('');
+    }
+    function openDatePicker(button) {
+      const popup=document.getElementById('date-popup'), same=dateTarget===button.dataset.openDate && !popup.hidden;
+      closeDatePicker();
+      if(same) return;
+      dateTarget=button.dataset.openDate;
+      dateViewMonth=(document.getElementById(`range-${dateTarget}`).value||document.getElementById('range-start').value||selectedMonth).slice(0,7);
+      button.parentElement.appendChild(popup);
+      popup.hidden=false; button.setAttribute('aria-expanded','true');
+      renderDateCalendar();
+    }
+    function shiftDateCalendar(step) {
+      const [y,m]=dateViewMonth.split('-').map(Number), date=new Date(Date.UTC(y,m-1+step,1));
+      dateViewMonth=`${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,'0')}`;
+      renderDateCalendar();
+    }
+    function closeMonthPicker() {
+      document.getElementById('month-popup').hidden=true;
+      document.getElementById('month-trigger').setAttribute('aria-expanded','false');
+    }
+    function renderMonthPicker() {
+      document.getElementById('month-trigger').textContent=monthLabel(selectedMonth);
+      document.getElementById('previous-month').disabled=selectedMonth==='2026-08';
+      document.getElementById('next-month').disabled=selectedMonth==='9999-12';
+      document.getElementById('picker-year').textContent=`${pickerYear}年`;
+      document.getElementById('previous-year').disabled=pickerYear<=2026;
+      document.getElementById('next-year').disabled=pickerYear>=9999;
+      document.getElementById('month-grid').innerHTML=Array.from({length:12},(_,i)=>{
+        const m=`${pickerYear}-${String(i+1).padStart(2,'0')}`;
+        return `<button data-pick-month="${m}" aria-label="${pickerYear}年${i+1}月" aria-pressed="${m===selectedMonth}" ${validMonth(m)?'':'disabled'}>${i+1}月</button>`;
+      }).join('');
+    }
+    function chooseMonth(month) {
+      if(!validMonth(month)) return;
+      const el=document.getElementById('month-select');
+      el.value=month; el.dispatchEvent(new Event('change',{bubbles:true}));
+      closeMonthPicker();
+    }
+    function shiftMonth(step) {
+      const [year,month]=selectedMonth.split('-').map(Number);
+      const date=new Date(Date.UTC(year,month-1+step,1));
+      chooseMonth(`${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,'0')}`);
+    }
+    function renderDateLabels() {
+      ['start','end'].forEach(key=>{
+        const value=document.getElementById(`range-${key}`).value,label=document.getElementById(`range-${key}-label`);
+        label.textContent=value||(key==='start'?'开始日期':'结束日期');
+        label.dataset.empty=String(!value);
+      });
+    }
+    let selectedProducts=new Set(initial.map(row=>row.product));
+    const undoByMonth=new Map();
+    function rememberUndo() {
+      undoByMonth.set(selectedMonth,structuredClone(store.months[selectedMonth]));
+    }
+    function rememberNumberEdit(el) {
+      if(!el.dataset.undoCaptured) { rememberUndo(); el.dataset.undoCaptured='true'; }
+    }
+    function visibleRows() {
+      return data.filter(row=>selectedProducts.has(row.product));
+    }
+    function applyFilters() {
+      const visible=visibleRows(), products=new Set(visible.map(row=>row.product));
+      document.querySelectorAll('#editor-body tr[data-product]').forEach(tr=>tr.hidden=!products.has(tr.dataset.product));
+      document.getElementById('empty-products').hidden=visible.length>0;
+      document.getElementById('product-filter-title').textContent=`产品筛选（${selectedProducts.size===data.length?'全部':`${selectedProducts.size}项`}）`;
+      document.getElementById('filter-summary').textContent=`显示 ${visible.length} / ${data.length} 个产品；SLOTS顶部统计与下方合计均按筛选结果计算。`;
+      renderFooter();
+      renderStats();
+    }
+    // 国办发明电〔2025〕7号，2026年中国大陆放假调休安排。
+    // https://www.beijing.gov.cn/cs/gncs/zcwj/202603/t20260327_4568275.html
+    const holidayRanges2026=[
+      ['2026-01-01','2026-01-03'],['2026-02-15','2026-02-23'],
+      ['2026-04-04','2026-04-06'],['2026-05-01','2026-05-05'],
+      ['2026-06-19','2026-06-21'],['2026-09-25','2026-09-27'],
+      ['2026-10-01','2026-10-07']
+    ];
+    const makeupDays2026=new Set(['2026-01-04','2026-02-14','2026-02-28','2026-05-09','2026-09-20','2026-10-10']);
+
+    function monthEnd(month) {
+      const [y,m]=month.split('-').map(Number);
+      return `${month}-${new Date(Date.UTC(y,m,0)).getUTCDate()}`;
+    }
+    function countWorkdays(start,end) {
+      let count=0;
+      const date=new Date(`${start}T00:00:00Z`), last=new Date(`${end}T00:00:00Z`);
+      for(;date<=last;date.setUTCDate(date.getUTCDate()+1)) {
+        const day=date.toISOString().slice(0,10);
+        if(makeupDays2026.has(day)) { count++; continue; }
+        if(holidayRanges2026.some(([a,b])=>day>=a && day<=b)) continue;
+        if(date.getUTCDay()!==0 && date.getUTCDay()!==6) count++;
+      }
+      return count;
+    }
+    function period(month=selectedMonth) {
+      const saved=store.months[month]?.dateRange;
+      const range=saved||{start:`${month}-01`,end:monthEnd(month)};
+      const days=countWorkdays(range.start,range.end);
+      return {...range,days,weeks:days===0?0:Math.max(1,Math.round(days/5)),isDefault:!saved};
+    }
+    function weeklyQuantity(value,month=selectedMonth) {
+      const weeks=period(month).weeks;
+      return weeks ? value/weeks : null;
+    }
+    function formatQuantity(value) { return value===null?'—':String(Number(value.toFixed(2))); }
+    function weeklyDisplay(value,withSign=false) {
+      if(value===null) return '—';
+      const n=Number(value.toFixed(1));
+      return withSign?signed(n):String(n);
+    }
+    function renderRangeStatus() {
+      document.getElementById('range-status').textContent='';
+    }
+    function renderRange() {
+      const range=store.months[selectedMonth].dateRange;
+      ['start','end'].forEach(key=>{
+        const el=document.getElementById(`range-${key}`);
+        el.min='1900-01-01'; el.max='9999-12-31';
+        el.value=range?.[key]||'';
+        el.setCustomValidity('');
+      });
+      renderRangeStatus();
+      renderDateLabels();
+    }
+    function applyDateRange() {
+      renderDateLabels();
+      const startEl=document.getElementById('range-start'), endEl=document.getElementById('range-end');
+      startEl.setCustomValidity(''); endEl.setCustomValidity('');
+      const start=startEl.value,end=endEl.value;
+      if(!start || !end) {
+        document.getElementById('range-status').textContent='请选齐开始和结束日期；小组工作日尚未更新。';
+        return;
+      }
+      if(!startEl.validity.valid || !endEl.validity.valid || start>end || (new Date(end)-new Date(start))/86400000>366) {
+        endEl.setCustomValidity('结束日期不得早于开始日期，日期范围最长为367天，可跨月选择。');
+        document.getElementById('range-status').textContent='日期范围无效，小组工作日未改变。';
+        return;
+      }
+      const previous=store.months[selectedMonth].dateRange;
+      if(previous?.start===start && previous?.end===end) return;
+      rememberUndo();
+      store.months[selectedMonth].dateRange={start,end};
+      renderEditor(); renderOutputs(); renderRangeStatus(); saveMonths();
+    }
+    function comparison(row,key) {
+      const prior=store.months[previousMonth(selectedMonth)]?.data.find(r=>r.product===row.product);
+      const before=key==='total'?priorTotal(row):prior?.[key];
+      if(before===undefined || before===null) return null;
+      const current=key==='total'?total(row):row[key];
+      if(compareMode==='month') return current-before;
+      const currentWeek=weeklyQuantity(current), priorWeek=weeklyQuantity(before,previousMonth(selectedMonth));
+      return currentWeek===null || priorWeek===null ? null : currentWeek-priorWeek;
+    }
+    function changeText(value) {
+      if(value===null) return compareMode==='week'?'暂无可比周量':'无上月明细';
+      const number=Number(value.toFixed(compareMode==='week'?1:10));
+      if(number===0) return '';
+      return `${compareMode==='week'?weeklyDisplay(number,true):signed(number)} 条${compareMode==='week'?'/周':'/月'}`;
+    }
+    function renderComparisons() {
+      document.querySelectorAll('[data-compare]').forEach(btn=>btn.setAttribute('aria-pressed',String(btn.dataset.compare===compareMode)));
+      document.querySelectorAll('[data-change]').forEach(el=>{
+        const value=comparison(data[Number(el.dataset.row)],el.dataset.change);
+        el.textContent=changeText(value);
+        el.classList.toggle('up',value!==null && value>0);
+        el.classList.toggle('down',value!==null && value<0);
+      });
+    }
+    function displayQuantity(value) { return compareMode==='week'?weeklyDisplay(weeklyQuantity(value)):formatQuantity(value); }
+    function renderFooter() {
+      const rows=visibleRows();
+      document.getElementById('editor-foot').innerHTML='<tr><th scope="row">合计</th>'+['total',...visibleRoleKeys()].map(key=>{
+        const changes=rows.map(row=>comparison(row,key));
+        const change=changes.includes(null)?null:changes.reduce((a,b)=>a+b,0);
+        const value=rows.reduce((a,row)=>a+(key==='total'?total(row):row[key]),0);
+        return `<td><span class="quantity" data-sum="${key}">${displayQuantity(value)}</span><div class="role-change delta ${change>0?'up':change<0?'down':''}">${changeText(change)}</div></td>`;
+      }).join('')+'</tr>';
+    }
+
+    function migrateGroupReserves(month) {
+      month.groups?.forEach(g=>{
+        if(g.temporary===undefined) g.temporary=(Number(g.revision)||0)+(Number(g.other)||0)+(Number(g.special)||0);
+      });
+    }
+    function migrateChengdu(month) {
+      if(!month.chengduGroups) {
+        const product=code=>{
+          const old=month.nonSlots?.find(r=>r.product===code);
+          const demand=old?.demand||0, days=old?.reservedTime||0;
+          return {product:code,demand,avgTime:demand?days/demand:0,...(!demand&&days?{legacyDays:days}:{})};
+        };
+        month.chengduGroups=[
+          {name:'成都',owner:'成都负责人',people:0,leave:0,products:['SLOTS','TU+MT','RD','DEER'].map(product)},
+          {name:'素材支持',owner:'素材支持负责人',people:0,leave:0,products:[{product:'TU+MT',demand:0,avgTime:0}]}
+        ];
+      }
+      syncChengdu(month);
+    }
+    function chengduDemand(row,month) { return row.product==='SLOTS'?month.groups.reduce((a,g)=>a+g.chengdu,0):row.demand; }
+    function chengduDays(row,month) { return row.legacyDays??chengduDemand(row,month)*row.avgTime; }
+    function syncChengdu(month) {
+      ['TU+MT','RD','DEER'].forEach(code=>{
+        const rows=month.chengduGroups.flatMap(g=>g.products).filter(r=>r.product===code);
+        const target=month.nonSlots.find(r=>r.product===code);
+        target.demand=rows.reduce((a,r)=>a+r.demand,0);
+        target.reservedTime=Number(rows.reduce((a,r)=>a+chengduDays(r,month),0).toFixed(6));
+      });
+    }
+    function loadMonths() {
+      try {
+        const saved=JSON.parse(localStorage.getItem(storageKey));
+        if(saved?.months?.['2026-08'] && validMonth(saved.selectedMonth) && saved.months[saved.selectedMonth]) {
+          Object.values(saved.months).forEach(month=>{
+            if(!month.nonSlots) month.nonSlots=structuredClone(nonSlotsInitial);
+            migrateGroupReserves(month);
+            migrateChengdu(month);
+            if(month.baseline) migrateGroupReserves(month.baseline);
+          });
+          return saved;
+        }
+      } catch (_) {}
+      const snapshot={data:load(),groups:loadGroups(),nonSlots:structuredClone(nonSlotsInitial)};
+      // Keep an untouched baseline for reset; old saved July edits are not historical actuals.
+      snapshot.data.forEach(row=>numericKeys.forEach(k=>row[k]=Math.max(0,Math.round(Number(row[k])||0))));
+      snapshot.groups.forEach(g=>Object.keys(g).forEach(k=>{
+        if(typeof g[k]==='number' && !['avgTime','people'].includes(k)) g[k]=Math.max(0,Math.round(g[k]));
+      }));
+      migrateGroupReserves(snapshot);
+      migrateChengdu(snapshot);
+      return {selectedMonth:'2026-08',months:{'2026-08':snapshot}};
+    }
+    function priorTotal(row) {
+      const prev=previousMonth(selectedMonth);
+      if(prev==='2026-07') return initial.find(r=>r.product===row.product).july;
+      const prior=store.months[prev]?.data.find(r=>r.product===row.product);
+      return prior ? total(prior) : null;
+    }
+    function saveMonths() {
+      store.selectedMonth=selectedMonth;
+      return cloud.queueSave();
+    }
+    function signed(n) { return n===null?'—':`${n>0?'+':''}${n}`; }
+
+    function load() {
+      try {
+        const saved = JSON.parse(localStorage.getItem('demand-dashboard-v1'));
+        if (Array.isArray(saved) && saved.length === initial.length) return saved;
+      } catch (_) {}
+      return structuredClone(initial);
+    }
+    function loadGroups() {
+      try { const saved=JSON.parse(localStorage.getItem('demand-groups-v1')); if(Array.isArray(saved)&&saved.length===groupInitial.length) return saved; } catch (_) {}
+      return structuredClone(groupInitial);
+    }
+    function total(row) { return row.director + row.kol + row.plan + row.image + row.cross; }
+    function week(value) { return weeklyDisplay(weeklyQuantity(value)); }
+    function sum(key) { return data.reduce((acc,row) => acc + (key === 'total' ? total(row) : row[key]), 0); }
+    function productDemand(code) { const row=data.find(x=>x.product===code); return row ? row.plan+row.cross : 0; }
+    function groupDemand(group) { return group.products.reduce((n,code)=>n+productDemand(code),0); }
+    function groupTotal(group) { return groupDemand(group)+group.innovation+group.playable; }
+    function groupActual(group) { return groupTotal(group)-group.chengdu; }
+    function groupCapacity(group) { return (group.people*period().days-group.leave-group.temporary+group.fulltime)/group.avgTime; }
+    function input(rowIndex,key,value) { return `<input type="number" min="0" step="1" value="${value}" data-row="${rowIndex}" data-key="${key}" aria-label="${data[rowIndex].product} ${key}">`; }
+
+    function render() {
+      document.title=document.querySelector('h1').textContent='需求量看板';
+      document.getElementById('month-select').value=selectedMonth;
+      pickerYear=Number(selectedMonth.slice(0,4));
+      renderMonthPicker();
+      renderRange();
+      document.getElementById('group-month').textContent='产品需求';
+      renderEditor();
+      renderOutputs();
+      renderNonSlots();
+    }
+
+    function renderEditor() {
+      const note=document.getElementById('week-note');
+      note.hidden=compareMode!=='week';
+      note.textContent=`本月按 ${period().weeks} 周计算；上月按 ${period(previousMonth(selectedMonth)).weeks} 周计算。周变化＝本月月量÷本月周数－上月月量÷上月周数。`;
+      const keys=visibleRoleKeys();
+      document.getElementById('editor-head').innerHTML='<tr>'+['产品','总量',...keys.map(k=>roleLabels[k])].map(n=>`<th scope="col">${n}</th>`).join('')+'</tr>';
+      const editor = document.getElementById('editor-body');
+      editor.innerHTML = data.map((row,i) => {
+        return `<tr data-product="${row.product}"><td><strong>${row.product}</strong></td><td class="readonly"><strong class="quantity" data-row="${i}" data-derived="total">${displayQuantity(total(row))}</strong><div class="role-change delta" data-row="${i}" data-change="total"></div></td>${keys.map(key=>`<td>${compareMode==='week'?`<span class="weekly-value" data-row="${i}" data-weekly="${key}">${displayQuantity(row[key])}</span>`:input(i,key,row[key])}<div class="role-change delta" data-row="${i}" data-change="${key}"></div></td>`).join('')}</tr>`;
+      }).join('')+`<tr id="empty-products" hidden><td colspan="${keys.length+2}">没有符合筛选条件的产品，请调整产品选择。</td></tr>`;
+      renderComparisons();
+      applyFilters();
+    }
+    function renderNonSlots() {
+      const rows=store.months[selectedMonth].nonSlots;
+      document.getElementById('non-slots-body').innerHTML=rows.map((row,i)=>`<tr><td><strong>${row.product}</strong></td>${['demand','reservedTime'].map(key=>`<td>${i<3?`<span class="quantity" title="由成都玩法小组需求量调整自动汇总">${formatQuantity(row[key])}</span>`:`<input type="number" min="0" step="1" value="${row[key]}" data-nonslot="${i}" data-nkey="${key}" aria-label="${row.product} ${key==='demand'?'需求量/月':'预留制作时间/月'}">`}<div class="role-change delta" data-nonslot-change="${i}" data-nkey="${key}"></div></td>`).join('')}</tr>`).join('');
+      renderNonSlotsOutputs();
+    }
+    function nonSlotsChange(row,key) {
+      const prior=store.months[previousMonth(selectedMonth)]?.nonSlots?.find(r=>r.product===row.product);
+      return prior ? row[key]-prior[key] : null;
+    }
+    function nonSlotsChangeText(value,key) {
+      if(value===null) return '无上月明细';
+      if(value===0) return '';
+      return `${value>0?'+':''}${formatQuantity(value)}${key==='demand'?' 条/月':' 天/月'}`;
+    }
+    function combinedChanges(changes) { return changes.includes(null)?null:changes.reduce((a,b)=>a+b,0); }
+    function renderNonSlotsOutputs() {
+      const rows=store.months[selectedMonth].nonSlots;
+      document.querySelectorAll('[data-nonslot-change]').forEach(el=>{
+        const value=nonSlotsChange(rows[Number(el.dataset.nonslotChange)],el.dataset.nkey);
+        el.textContent=nonSlotsChangeText(value,el.dataset.nkey);
+        el.title=el.dataset.nkey==='demand'?'较上月需求量变化':'较上月预留制作时间变化（沿用填写单位）';
+        el.classList.toggle('up',value!==null && value>0);
+        el.classList.toggle('down',value!==null && value<0);
+      });
+      document.getElementById('non-slots-foot').innerHTML='<tr><th scope="row">合计</th>'+['demand','reservedTime'].map(key=>{
+        const value=rows.reduce((a,row)=>a+row[key],0), change=combinedChanges(rows.map(row=>nonSlotsChange(row,key)));
+        return `<td><span class="quantity" data-nonslot-sum="${key}">${value}</span><div class="role-change delta ${change>0?'up':change<0?'down':''}" data-nonslot-sum-change="${key}">${nonSlotsChangeText(change,key)}</div></td>`;
+      }).join('')+'</tr>';
+      renderStats();
+    }
+    function renderStats() {
+      const rows=currentView==='edit-view'?visibleRows():data;
+      const isGroup=currentView==='group-view';
+      const monthTotal=rows.reduce((a,row)=>a+(isGroup?row.plan+row.cross:total(row)),0), range=period();
+      const delta=combinedChanges(rows.map(row=>{
+        if(!isGroup) return comparison(row,'total');
+        const prior=store.months[previousMonth(selectedMonth)]?.data.find(r=>r.product===row.product);
+        return prior?row.plan+row.cross-prior.plan-prior.cross:null;
+      }));
+      const nonRows=store.months[selectedMonth].nonSlots, nonTotal=nonRows.reduce((a,row)=>a+row.demand,0);
+      const nonDelta=combinedChanges(nonRows.map(row=>nonSlotsChange(row,'demand')));
+      const extra=currentView==='group-view'?
+        [['工作日',`${range.days} 天`],['工作周',`${range.weeks} 周`]]:
+        [['非SLOTS需求量',`${nonTotal} 条/月`],['对比上月变化',nonDelta===null?'—':nonSlotsChangeText(nonDelta,'demand')||'无变化']];
+      document.getElementById('stats').innerHTML = [
+        [isGroup?'SLOTS策跨需求量':'SLOTS需求量',isGroup?`${monthTotal} 条/月`:`${displayQuantity(monthTotal)} 条/${compareMode==='week'?'周':'月'}`],
+        ['对比上月变化',delta===null?'—':isGroup?(delta?`${signed(delta)} 条/月`:'无变化'):changeText(delta)||'无变化'],
+        ...extra
+      ].map(([label,value])=>`<article class="stat"><div class="stat-label">${label}</div><div class="stat-value">${value}</div></article>`).join('');
+    }
+    function renderOutputs() {
+      renderStats();
+      renderGroups();
+      renderChengdu();
+    }
+    function chengduInput(i,j,key,value) {
+      return `<input type="number" min="0" step="${key==='avgTime'?'0.1':key==='people'?'any':'1'}" value="${value}" data-cgroup="${i}" data-cproduct="${j}" data-ckey="${key}" aria-label="${store.months[selectedMonth].chengduGroups[i].name} ${j>=0?store.months[selectedMonth].chengduGroups[i].products[j].product:''} ${key}">`;
+    }
+    function renderChengdu() {
+      const month=store.months[selectedMonth];
+      document.getElementById('chengdu-body').innerHTML=month.chengduGroups.map((g,i)=>g.products.map((row,j)=>{
+        const span=`rowspan="${g.products.length}"`;
+        return `<tr>${j===0?`<td ${span} class="c-fixed c1"><strong>${g.name}</strong></td><td ${span} class="c-fixed c2">${g.owner}</td>`:''}<td class="c-fixed c3">${row.product}</td><td>${row.product==='SLOTS'?'<span data-cslots></span>':chengduInput(i,j,'demand',row.demand)}</td><td data-cdays="${i}-${j}" title="${row.legacyDays!==undefined?'原表有预留天数但需求为0，暂保留原值；编辑需求或制作时间后自动计算':''}"></td><td>${chengduInput(i,j,'avgTime',row.avgTime)}<span class="pending-time" data-ctime-note="${i}-${j}" id="ctime-note-${i}-${j}" hidden>待填写</span></td>${j===0?`<td ${span} class="derived" data-csum="${i}"></td><td ${span} class="derived" data-ccapacity="${i}"></td><td ${span} class="derived" data-cgap="${i}"></td><td ${span}>${chengduInput(i,-1,'people',g.people)}</td><td ${span}>${chengduInput(i,-1,'leave',g.leave)}</td>`:''}</tr>`;
+      }).join('')).join('');
+      updateChengduOutputs();
+    }
+    function updateChengduOutputs() {
+      const month=store.months[selectedMonth];
+      let anyPending=false;
+      month.chengduGroups.forEach((g,i)=>{
+        let pending=false;
+        g.products.forEach((row,j)=>{
+          const missing=chengduDemand(row,month)>0 && row.avgTime===0;
+          pending ||= missing;
+          const cell=document.querySelector(`[data-cdays="${i}-${j}"]`);
+          cell.textContent=missing?'待填写':formatQuantity(chengduDays(row,month));
+          cell.classList.toggle('pending-time',missing);
+          document.querySelector(`[data-ctime-note="${i}-${j}"]`).hidden=!missing;
+          const input=document.querySelector(`[data-cgroup="${i}"][data-cproduct="${j}"][data-ckey="avgTime"]`);
+          if(missing) input.setAttribute('aria-describedby',`ctime-note-${i}-${j}`);
+          else input.removeAttribute('aria-describedby');
+        });
+        anyPending ||= pending;
+        const required=g.products.reduce((a,r)=>a+chengduDays(r,month),0), capacity=g.people*period().days-g.leave, gap=capacity-required;
+        const sumCell=document.querySelector(`[data-csum="${i}"]`);
+        sumCell.textContent=pending?'待补全':formatQuantity(required);
+        sumCell.classList.toggle('pending-time',pending);
+        document.querySelector(`[data-ccapacity="${i}"]`).textContent=roundedCount(capacity);
+        const status=gapStatus(capacity,required);
+        const gapCell=document.querySelector(`[data-cgap="${i}"]`);
+        gapCell.textContent=pending?'待补全':status.text;
+        gapCell.className=`derived ${pending?'pending-time':status.cls}`;
+        if(i===0) document.getElementById('chengdu-alert').hidden=pending || status.delta>=0;
+      });
+      document.querySelector('[data-cslots]').textContent=month.groups.reduce((a,g)=>a+g.chengdu,0);
+      const required=month.chengduGroups.reduce((a,g)=>a+g.products.reduce((n,r)=>n+chengduDays(r,month),0),0);
+      const capacity=month.chengduGroups.reduce((a,g)=>a+g.people*period().days-g.leave,0),gap=capacity-required;
+      const status=gapStatus(capacity,required);
+      document.getElementById('chengdu-summary').innerHTML=[
+        ['应制作总天数（天）',anyPending?'待补全':formatQuantity(required),anyPending?'pending-time':''],
+        ['人员总承载力（天）',roundedCount(capacity),''],
+        ['整体余量 / 缺口（天）',anyPending?'待补全':status.text,anyPending?'pending-time':status.cls]
+      ].map(([label,value,cls])=>`<article class="stat"><div class="stat-label">${label}</div><div class="stat-value ${cls}">${value}</div></article>`).join('');
+      document.querySelectorAll('[data-gderived="chengduWeek"]').forEach(el=>el.textContent=chengduWeekDays(groups[Number(el.dataset.group)]));
+    }
+
+    function groupProducts(g,i) {
+      return `<div class="group-products" data-drop-group="${i}" aria-label="${g.name}产品区">${g.products.map(code=>`<button class="group-product" draggable="true" data-move-product="${code}" title="拖动到其他小组；也可按左右方向键移动">${code}</button>`).join('')||'<span class="empty-group">暂无产品，可拖入产品</span>'}</div>`;
+    }
+    function moveProduct(code,target) {
+      const source=groups.findIndex(g=>g.products.includes(code));
+      if(source<0 || !Number.isInteger(target) || !groups[target] || source===target) return;
+      rememberUndo();
+      groups[source].products=groups[source].products.filter(p=>p!==code);
+      groups[target].products.push(code);
+      renderGroups(); renderStats(); saveMonths();
+      document.getElementById('notice').textContent=`${code}已从${groups[source].name}移至${groups[target].name}，策跨需求 ${productDemand(code)} 条/月随产品转移。`;
+      document.querySelector(`[data-move-product="${code}"]`).focus();
+    }
+    function roundedCount(value,withSign=false) {
+      const rounded=Math.sign(value)*Math.round(Math.abs(value));
+      return `${withSign&&rounded>0?'+':''}${rounded||0}`;
+    }
+    function gapStatus(capacity,required) {
+      const delta=Number(roundedCount(capacity))-Number(roundedCount(required));
+      return {delta,text:delta===0?'平衡':`${delta>0?'缺':'超'}${Math.abs(delta)}`,cls:delta===0?'gap-balanced':delta>0?'gap-ok':'gap-risk'};
+    }
+    function chengduWeekDays(group) {
+      const weeks=period().weeks;
+      const slots=store.months[selectedMonth].chengduGroups[0].products.find(r=>r.product==='SLOTS');
+      if(!weeks) return '—';
+      if(group.chengdu>0 && !slots.avgTime) return '待填写';
+      return formatQuantity(group.chengdu/weeks*slots.avgTime);
+    }
+    function groupInput(i,key,value) { return `<input type="number" min="${key==='avgTime'?'0.1':'0'}" step="${key==='avgTime'?'0.1':key==='people'?'any':'1'}" value="${value}" data-group="${i}" data-gkey="${key}" aria-label="${groups[i].name} ${key}">`; }
+    function renderGroups() {
+      document.getElementById('group-view').style.setProperty('--products-width',`${Math.max(110,...groups.map(g=>g.products.length*48+24))}px`);
+      const body=document.getElementById('group-body');
+      body.innerHTML=groups.map((g,i)=>{
+        const demand=groupDemand(g), totalValue=groupTotal(g), actual=groupActual(g), capacity=groupCapacity(g), status=gapStatus(capacity,actual);
+        return `<tr><td><strong>${g.name}</strong></td><td>${g.owner}</td><td>${groupProducts(g,i)}</td><td class="derived" data-group="${i}" data-gderived="demand">${demand}</td><td>${groupInput(i,'innovation',g.innovation)}</td><td>${groupInput(i,'playable',g.playable)}</td><td class="derived" data-group="${i}" data-gderived="total">${totalValue}</td><td>${groupInput(i,'chengdu',g.chengdu)}</td><td data-group="${i}" data-gderived="chengduWeek">${chengduWeekDays(g)}</td><td class="derived" data-group="${i}" data-gderived="actual">${actual}</td><td class="derived" data-group="${i}" data-gderived="capacity">${roundedCount(capacity)}</td><td class="derived ${status.cls}" data-group="${i}" data-gderived="gap">${status.text}</td><td>${groupInput(i,'avgTime',g.avgTime)}</td><td>${groupInput(i,'people',g.people)}</td><td>${groupInput(i,'fulltime',g.fulltime)}</td><td>${groupInput(i,'leave',g.leave)}</td><td>${groupInput(i,'temporary',g.temporary)}</td></tr>`;
+      }).join('');
+      renderGroupSummary();
+    }
+    function renderGroupSummary() {
+      const actualAll=groups.reduce((n,g)=>n+groupActual(g),0), capacityAll=groups.reduce((n,g)=>n+groupCapacity(g),0), status=gapStatus(capacityAll,actualAll);
+      document.getElementById('group-summary').innerHTML=`<article class="stat"><div class="stat-label">实际小组总量（条）</div><div class="stat-value">${actualAll}</div></article><article class="stat"><div class="stat-label">人员总承载力（条）</div><div class="stat-value">${roundedCount(capacityAll)}</div></article><article class="stat"><div class="stat-label">整体余量 / 缺口（条）</div><div class="stat-value ${status.cls}">${status.text}</div></article>`;
+    }
+    function updateGroupRow(i) {
+      const g=groups[i], capacity=groupCapacity(g), status=gapStatus(capacity,groupActual(g));
+      const set=(key,value)=>document.querySelector(`[data-group="${i}"][data-gderived="${key}"]`).textContent=value;
+      set('demand',groupDemand(g)); set('total',groupTotal(g)); set('actual',groupActual(g)); set('capacity',roundedCount(capacity)); set('gap',status.text);set('chengduWeek',chengduWeekDays(g));
+      const gapCell=document.querySelector(`[data-group="${i}"][data-gderived="gap"]`);
+      gapCell.className=`derived ${status.cls}`;
+      renderGroupSummary();
+    }
+
+    function updateRow(i) {
+      const row=data[i], t=total(row);
+      const set=(key,value)=>document.querySelector(`[data-row="${i}"][data-derived="${key}"]`).textContent=value;
+      set('total',displayQuantity(t));
+      renderComparisons();
+      renderFooter();
+    }
+
+    function readNumber(el,decimal=false) {
+      let n=Number(el.value);
+      const min=Number(el.min),isTime=el.dataset.gkey==='avgTime'||el.dataset.ckey==='avgTime';
+      if(isTime && el.value!=='' && Number.isFinite(n)) {
+        n=Number(n.toFixed(1));
+        if(Number(el.value)!==n) el.value=n;
+      }
+      if(el.value==='' || !Number.isFinite(n) || n<min || (!decimal && !Number.isSafeInteger(n))) {
+        el.setCustomValidity(decimal ? `请输入不小于${min}的有效数字` : '请输入非负整数，不支持小数');
+        el.reportValidity();
+        return null;
+      }
+      el.setCustomValidity('');
+      return n;
+    }
+    document.getElementById('editor-body').addEventListener('input', e => {
+      if (!e.target.matches('input[data-row]')) return;
+      const i=Number(e.target.dataset.row), key=e.target.dataset.key;
+      const value=readNumber(e.target);
+      if(value===null) return;
+      if(value===data[i][key]) return;
+      rememberNumberEdit(e.target);
+      data[i][key]=value;
+      updateRow(i); renderOutputs();
+      saveMonths();
+    });
+    let draggingProduct=null;
+    const groupBody=document.getElementById('group-body');
+    groupBody.addEventListener('keydown',e=>{
+      if(!e.target.matches('[data-move-product]') || !['ArrowLeft','ArrowRight'].includes(e.key)) return;
+      e.preventDefault();
+      const source=groups.findIndex(g=>g.products.includes(e.target.dataset.moveProduct));
+      moveProduct(e.target.dataset.moveProduct,source+(e.key==='ArrowLeft'?-1:1));
+    });
+    groupBody.addEventListener('dragstart',e=>{
+      const card=e.target.closest('[data-move-product]');
+      if(!card) { e.preventDefault(); return; }
+      draggingProduct=card.dataset.moveProduct;
+      e.dataTransfer.setData('text/plain',draggingProduct);
+      e.dataTransfer.effectAllowed='move';
+    });
+    groupBody.addEventListener('dragover',e=>{
+      const zone=e.target.closest('[data-drop-group]');
+      if(!zone || !draggingProduct) return;
+      e.preventDefault(); e.dataTransfer.dropEffect='move';
+      groupBody.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
+      zone.classList.add('drag-over');
+    });
+    groupBody.addEventListener('dragleave',e=>{
+      const zone=e.target.closest('[data-drop-group]');
+      if(zone && !zone.contains(e.relatedTarget)) zone.classList.remove('drag-over');
+    });
+    groupBody.addEventListener('drop',e=>{
+      const zone=e.target.closest('[data-drop-group]');
+      if(!zone || !draggingProduct) return;
+      e.preventDefault();
+      const code=draggingProduct; draggingProduct=null;
+      groupBody.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
+      moveProduct(code,Number(zone.dataset.dropGroup));
+    });
+    groupBody.addEventListener('dragend',()=>{
+      draggingProduct=null;
+      groupBody.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
+    });
+    document.getElementById('group-body').addEventListener('input', e => {
+      if (!e.target.matches('input[data-group]')) return;
+      const i=Number(e.target.dataset.group), key=e.target.dataset.gkey;
+      const value=readNumber(e.target,['avgTime','people'].includes(key));
+      if(value===null) return;
+      if(value===groups[i][key]) return;
+      rememberNumberEdit(e.target);
+      groups[i][key]=value;
+      updateGroupRow(i);
+      if(key==='chengdu') updateChengduOutputs();
+      saveMonths();
+    });
+    document.getElementById('chengdu-body').addEventListener('input',e=>{
+      const el=e.target;
+      if(!el.matches('input[data-cgroup]')) return;
+      const g=store.months[selectedMonth].chengduGroups[el.dataset.cgroup],j=Number(el.dataset.cproduct),key=el.dataset.ckey;
+      const target=j<0?g:g.products[j], value=readNumber(el,['avgTime','people'].includes(key));
+      if(value===null || value===target[key]) return;
+      rememberNumberEdit(el);
+      target[key]=value;
+      if(j>=0) delete target.legacyDays;
+      syncChengdu(store.months[selectedMonth]);
+      updateChengduOutputs();renderNonSlots();saveMonths();
+    });
+    document.getElementById('non-slots-body').addEventListener('input',e=>{
+      if(!e.target.matches('input[data-nonslot]')) return;
+      const row=store.months[selectedMonth].nonSlots[Number(e.target.dataset.nonslot)],key=e.target.dataset.nkey;
+      const value=readNumber(e.target);
+      if(value===null || value===row[key]) return;
+      rememberNumberEdit(e.target);
+      row[key]=value;
+      renderNonSlotsOutputs();
+      saveMonths();
+    });
+    document.addEventListener('focusin',e=>{
+      if(e.target.matches('input[type=number]')) delete e.target.dataset.undoCaptured;
+    });
+    document.addEventListener('keydown',e=>{
+      if((e.ctrlKey||e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase()==='z') {
+        if(!cloud.ready) return;
+        e.preventDefault();
+        if(!e.repeat) undoLastChange();
+        return;
+      }
+      if(e.key==='Escape') { document.querySelector('.product-filter').open=false; closeMonthPicker(); closeDatePicker(); }
+      if(e.key==='Enter' && e.target.matches('input[type=number]')) { e.preventDefault(); e.target.blur(); }
+    });
+    // Group all keystrokes during one numeric-field edit into a single undo step.
+    document.addEventListener('focusout',e=>{
+      const el=e.target;
+      if(!el.matches('input[type=number]')) return;
+      if(!el.validity.valid) {
+        if(el.dataset.row!==undefined) el.value=data[el.dataset.row][el.dataset.key];
+        else if(el.dataset.group!==undefined) el.value=groups[el.dataset.group][el.dataset.gkey];
+        else if(el.dataset.nonslot!==undefined) el.value=store.months[selectedMonth].nonSlots[el.dataset.nonslot][el.dataset.nkey];
+        else if(el.dataset.cgroup!==undefined) {
+          const g=store.months[selectedMonth].chengduGroups[el.dataset.cgroup];
+          el.value=(Number(el.dataset.cproduct)<0?g:g.products[el.dataset.cproduct])[el.dataset.ckey];
+        }
+      }
+      el.setCustomValidity('');
+      delete el.dataset.undoCaptured;
+      applyFilters();
+    });
+    document.getElementById('month-select').addEventListener('change',e=>{
+      const month=e.target.value;
+      if(!validMonth(month)) {
+        e.target.value=selectedMonth;
+        document.getElementById('notice').textContent='请选择2026年8月或之后的月份；7月为原表历史数据。';
+        return;
+      }
+      let message='';
+      // Initialize only once, always from an earlier month, never from the current view.
+      if(!store.months[month]) {
+        const prev=previousMonth(month);
+        const sourceMonth=store.months[prev] ? prev : Object.keys(store.months).filter(m=>m<month).sort().at(-1);
+        const source=store.months[sourceMonth];
+        const baseline={data:structuredClone(source.data),groups:structuredClone(source.groups),nonSlots:structuredClone(source.nonSlots),chengduGroups:structuredClone(source.chengduGroups)};
+        store.months[month]={...structuredClone(baseline),copiedFrom:sourceMonth,baseline};
+        message=`首次进入${monthLabel(month)}，已带入${monthLabel(sourceMonth)}的数据，后续修改将独立保存。`;
+      }
+      if(!store.months[previousMonth(month)] && month!=='2026-08') message+=' 上月尚无数据，对照暂显示“—”。';
+      selectedMonth=month;
+      closeDatePicker();
+      ({data,groups}=store.months[selectedMonth]);
+      document.getElementById('notice').textContent=message;
+      saveMonths(); render();
+    });
+    document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
+      currentView=tab.dataset.view;
+      document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===tab));
+      ['edit-view','group-view'].forEach(id=>document.getElementById(id).hidden=tab.dataset.view!==id);
+      document.getElementById('non-slots-view').hidden=tab.dataset.view!=='edit-view';
+      document.getElementById('chengdu-view').hidden=tab.dataset.view!=='group-view';
+      renderStats();
+    }));
+    document.querySelectorAll('[data-compare]').forEach(btn=>btn.addEventListener('click',()=>{
+      compareMode=btn.dataset.compare;
+      renderEditor(); renderOutputs();
+    }));
+    document.getElementById('range-start').addEventListener('change',applyDateRange);
+    document.getElementById('range-end').addEventListener('change',applyDateRange);
+    document.getElementById('product-options').innerHTML=initial.map(row=>`<label><input type="checkbox" data-product-option="${row.product}" checked>${row.product}</label>`).join('');
+    document.getElementById('product-options').addEventListener('change',e=>{
+      const code=e.target.dataset.productOption;
+      if(!code) return;
+      if(e.target.checked) selectedProducts.add(code); else selectedProducts.delete(code);
+      applyFilters();
+    });
+    function selectProducts(all) {
+      selectedProducts=new Set(all?data.map(row=>row.product):[]);
+      document.querySelectorAll('[data-product-option]').forEach(el=>el.checked=all);
+      applyFilters();
+    }
+    document.getElementById('select-all-products').addEventListener('click',()=>selectProducts(true));
+    document.getElementById('clear-products').addEventListener('click',()=>selectProducts(false));
+    document.addEventListener('pointerdown',e=>{
+      const filter=document.querySelector('.product-filter');
+      if(!filter.contains(e.target)) filter.open=false;
+      if(!document.querySelector('.month-picker').contains(e.target)) closeMonthPicker();
+      if(!e.target.closest('.date-picker')) closeDatePicker();
+    });
+    document.getElementById('month-trigger').addEventListener('click',()=>{
+      const popup=document.getElementById('month-popup'),opening=popup.hidden;
+      if(opening) { pickerYear=Number(selectedMonth.slice(0,4)); renderMonthPicker(); }
+      popup.hidden=!opening;
+      document.getElementById('month-trigger').setAttribute('aria-expanded',String(opening));
+    });
+    document.getElementById('previous-month').addEventListener('click',()=>shiftMonth(-1));
+    document.getElementById('next-month').addEventListener('click',()=>shiftMonth(1));
+    document.getElementById('previous-year').addEventListener('click',()=>{if(pickerYear>2026) pickerYear--;renderMonthPicker();});
+    document.getElementById('next-year').addEventListener('click',()=>{if(pickerYear<9999) pickerYear++;renderMonthPicker();});
+    document.getElementById('month-grid').addEventListener('click',e=>{
+      if(e.target.dataset.pickMonth) { chooseMonth(e.target.dataset.pickMonth); document.getElementById('month-trigger').focus(); }
+    });
+    document.querySelectorAll('[data-open-date]').forEach(button=>button.addEventListener('click',()=>openDatePicker(button)));
+    document.getElementById('date-prev').addEventListener('click',()=>shiftDateCalendar(-1));
+    document.getElementById('date-next').addEventListener('click',()=>shiftDateCalendar(1));
+    document.getElementById('date-grid').addEventListener('click',e=>{
+      if(!e.target.dataset.pickDate) return;
+      const input=document.getElementById(`range-${dateTarget}`);
+      input.value=e.target.dataset.pickDate;
+      input.dispatchEvent(new Event('change',{bubbles:true}));
+      closeDatePicker();
+      document.querySelector(`[data-open-date="${dateTarget}"]`).focus();
+    });
+    function undoLastChange() {
+      const snapshot=undoByMonth.get(selectedMonth);
+      if(!snapshot) return;
+      if(document.activeElement.matches('input')) document.activeElement.blur();
+      store.months[selectedMonth]=snapshot;
+      ({data,groups}=snapshot);
+      undoByMonth.delete(selectedMonth);
+      document.getElementById('notice').textContent='已撤销当前月份的上一步修改。';
+      closeDatePicker();
+      render(); saveMonths();
+    }
+    // Tokens are deliberately kept in memory only. The publishable key is not a server secret.
+    const cloud={
+      url:'https://mjqjcwwthhjofmxyrulp.supabase.co',
+      key:'sb_publishable_rhvEeAOZiOaZvGSQt06mjg_dedjeQ3S',
+      session:null,ready:false,revision:0,dirty:false,busy:false,timer:null,draft:null,conflict:false,
+      draftKey:'demand-dashboard-cloud-draft-v1',
+      message(text,error=false) {
+        const el=document.getElementById('cloud-message');
+        el.textContent=text;el.dataset.error=String(error);
+      },
+      status(text,error=false) {
+        const el=document.getElementById('save-status');
+        el.textContent=text;el.dataset.error=String(error);
+      },
+      lock(locked) {
+        this.ready=!locked;document.getElementById('dashboard-content').inert=locked;
+      },
+      async request(path,{method='GET',body,auth=true,headers={}}={}) {
+        if(auth && !this.session) throw new Error('请先登录云端。');
+        if(auth && Date.now()>this.session.expiresAt-60000) {
+          const refreshed=await this.request('/auth/v1/token?grant_type=refresh_token',{
+            method:'POST',body:{refresh_token:this.session.refresh_token},auth:false
+          });
+          this.session={...refreshed,expiresAt:Date.now()+refreshed.expires_in*1000};
+        }
+        let response;
+        try {
+          response=await fetch(this.url+path,{
+            method,headers:{apikey:this.key,'Content-Type':'application/json',
+              ...(auth?{Authorization:`Bearer ${this.session.access_token}`} :{}),...headers},
+            ...(body!==undefined?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)
+          });
+        } catch(_) { throw new Error('网络连接失败或超时；数据尚未同步，请重试，不要关闭页面。'); }
+        const text=await response.text();
+        let result;try { result=text?JSON.parse(text):null; } catch(_) { throw new Error('云端返回异常，未确认保存成功。'); }
+        if(!response.ok) {
+          const error=new Error(response.status===404 || result?.code==='PGRST205'
+            ?'缺少看板数据表，请在 Supabase SQL Editor 执行 supabase-setup.sql。'
+            :response.status===401?'登录已失效或邮箱/密码不正确，请重新登录。'
+            :response.status===403?'此账号没有看板权限，请检查 SQL 中授权的邮箱。'
+            :`云端请求失败（${response.status}）：${result?.msg||result?.message||result?.error_description||'请稍后重试'}`);
+          error.code=result?.code;error.httpStatus=response.status;throw error;
+        }
+        return result;
+      },
+      normalize(payload) {
+        const snapshot=structuredClone(payload);
+        if(!snapshot || !validMonth(snapshot.selectedMonth) || !snapshot.months?.[snapshot.selectedMonth] || !snapshot.months['2026-08'])
+          throw new Error('云端数据结构不完整，已停止加载，未覆盖本地数据。');
+        for(const [month,m] of Object.entries(snapshot.months)) {
+          if(!validMonth(month)||!Array.isArray(m.data)||m.data.length!==initial.length||!Array.isArray(m.groups)||m.groups.length!==4)
+            throw new Error('云端月份数据异常，已停止加载。');
+          if(m.data.some((r,i)=>r.product!==initial[i].product||numericKeys.some(k=>!Number.isSafeInteger(r[k])||r[k]<0)))
+            throw new Error('云端产品数据异常，已停止加载。');
+          if(!m.nonSlots) m.nonSlots=structuredClone(nonSlotsInitial);
+          if(m.nonSlots.length!==nonSlotsInitial.length||m.nonSlots.some((r,i)=>r.product!==nonSlotsInitial[i].product))
+            throw new Error('云端非SLOTS数据异常，已停止加载。');
+          for(const [i,g] of m.groups.entries()) {
+            if(g.name!==groupInitial[i].name||g.owner!==groupInitial[i].owner||!Array.isArray(g.products)||g.products.some(p=>!initial.some(r=>r.product===p))||
+              ['innovation','playable','chengdu','avgTime','people','fulltime','leave'].some(k=>!Number.isFinite(g[k])||g[k]<0)||g.avgTime<=0)
+              throw new Error('云端小组数据异常，已停止加载。');
+          }
+          migrateGroupReserves(m);migrateChengdu(m);
+        }
+        return snapshot;
+      },
+      adopt(payload) {
+        store=this.normalize(payload);selectedMonth=store.selectedMonth;({data,groups}=store.months[selectedMonth]);
+        undoByMonth.clear();closeDatePicker();closeMonthPicker();render();
+      },
+      backup(payload=store,label='需求量看板备份') {
+        const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'});
+        const url=URL.createObjectURL(blob),a=document.createElement('a');
+        a.href=url;a.download=`${label}-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
+        document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
+      },
+      keepDraft() {
+        if(!this.session) return;
+        const draft={owner:this.session.user.id,revision:this.revision,payload:structuredClone(store)};
+        this.draft=draft;
+        try { localStorage.setItem(this.draftKey,JSON.stringify(draft)); }
+        catch(_) { this.message('应急副本无法写入浏览器，请尽快确认云端保存成功，或下载备份。',true); }
+      },
+      readDraft() {
+        try { return JSON.parse(localStorage.getItem(this.draftKey)); } catch(_) { return null; }
+      },
+      clearDraft() {
+        this.draft=null;
+        try { localStorage.removeItem(this.draftKey); } catch(_) {}
+      },
+      async loadRemote() {
+        const owners=await this.request('/rest/v1/demand_dashboard_owner?select=owner_id');
+        if(!owners?.some(o=>o.owner_id===this.session.user.id)) throw new Error('当前账号未被授权。请执行建表脚本并填写你自己的登录邮箱。');
+        const rows=await this.request(`/rest/v1/demand_dashboard_state?owner_id=eq.${encodeURIComponent(this.session.user.id)}&select=payload,revision`);
+        if(!Array.isArray(rows)||rows.length>1) throw new Error('云端数据返回异常。');
+        return rows[0]||null;
+      },
+      async login(event) {
+        event.preventDefault();if(this.busy) return;
+        if(this.dirty) { this.message('请先重试保存，或下载备份后退出，再重新登录。',true);return; }
+        this.busy=true;this.lock(true);this.message('正在验证账号并读取云端…');
+        try {
+          const password=document.getElementById('cloud-password').value;
+          const session=await this.request('/auth/v1/token?grant_type=password',{method:'POST',auth:false,
+            body:{email:document.getElementById('cloud-email').value.trim(),password}});
+          document.getElementById('cloud-password').value='';
+          this.session={...session,expiresAt:Date.now()+session.expires_in*1000};
+          document.getElementById('cloud-logout').hidden=false;
+          const row=await this.loadRemote();
+          document.getElementById('cloud-login').hidden=true;
+          this.conflict=false;this.draft=this.readDraft();
+          if(this.draft && this.draft.owner!==this.session.user.id) this.draft=null;
+          if(row) {
+            this.revision=row.revision;
+            if(this.draft) {
+              this.adopt(this.draft.payload);
+              this.conflict=this.draft.revision!==row.revision;
+              document.getElementById('cloud-recover').hidden=this.conflict;
+              document.getElementById('cloud-reload').hidden=false;
+              this.status('发现未同步修改',true);
+              this.message(this.conflict?'云端版本已变化。请备份当前未同步修改，再读取云端；不会自动覆盖。':'发现上次未同步修改。可恢复并上传，或备份后读取云端。',true);
+            } else {
+              this.adopt(row.payload);this.lock(false);this.status('已从云端读取');
+              this.message('已登录。修改后自动保存到云端，历史版本也会保留。');
+            }
+          } else {
+            this.revision=0;
+            if(this.draft) this.adopt(this.draft.payload);
+            document.getElementById('cloud-migrate').hidden=false;
+            this.status('尚未迁移到云端',true);
+            this.message(`云端还没有数据。当前预览共 ${Object.keys(store.months).length} 个月；核对后点击“下载备份并迁移到云端”。若这里是初始示例，请回到原浏览器迁移真实数据。`);
+          }
+        } catch(error) {
+          this.message(error.message,true);this.status('云端连接未完成',true);
+        } finally { this.busy=false;document.getElementById('cloud-password').value=''; }
+      },
+      async migrate() {
+        if(this.busy||!this.session||this.revision!==0) return;
+        if(!confirm('请确认下方是你要迁移的全部月份数据。将先下载JSON备份，再上传到空的云端。继续吗？')) return;
+        this.backup();this.keepDraft();this.busy=true;
+        this.status('正在迁移，请勿关闭页面');
+        try {
+          const payload=this.normalize(store);
+          await this.request('/rest/v1/demand_dashboard_state',{method:'POST',
+            body:{owner_id:this.session.user.id,payload},headers:{Prefer:'return=representation'}});
+          const row=await this.loadRemote();
+          if(!row || stableJson(row.payload)!==stableJson(payload)) throw new Error('迁移后读取校验失败，请保留下载的备份，勿重复覆盖云端。');
+          this.revision=row.revision;this.adopt(row.payload);this.clearDraft();this.dirty=false;
+          document.getElementById('cloud-migrate').hidden=true;this.lock(false);
+          this.status('已保存到云端');this.message('迁移及读取校验完成。原浏览器数据和下载备份均保留，后续以云端为准。');
+        } catch(error) {
+          this.message(`${error.message} 可退出后重新登录，检查云端是否已收到数据。`,true);
+          this.status('迁移未完成确认',true);
+        } finally { this.busy=false; }
+      },
+      queueSave() {
+        if(!this.ready||!this.session) return false;
+        this.dirty=true;this.keepDraft();this.status('有修改待同步…');
+        clearTimeout(this.timer);this.timer=setTimeout(()=>this.flush(),600);return true;
+      },
+      async flush() {
+        if(this.busy||!this.dirty||!this.ready||!this.session) return;
+        clearTimeout(this.timer);this.busy=true;
+        const payload=structuredClone(store),version=this.revision;
+        this.status('正在保存到云端…');
+        try {
+          const rows=await this.request(`/rest/v1/demand_dashboard_state?owner_id=eq.${encodeURIComponent(this.session.user.id)}&revision=eq.${version}`,{
+            method:'PATCH',body:{payload},headers:{Prefer:'return=representation'}});
+          if(!rows?.length) {
+            this.conflict=true;this.lock(true);
+            document.getElementById('cloud-reload').hidden=false;
+            throw new Error('云端版本已被其他页面更新。已停止覆盖；请备份当前数据，再读取云端。');
+          }
+          if(stableJson(rows[0].payload)!==stableJson(payload)||rows[0].revision<=version) throw new Error('云端保存校验未通过，请重试或重新登录。');
+          this.revision=rows[0].revision;
+          this.dirty=stableJson(store)!==stableJson(payload);
+          document.getElementById('cloud-retry').hidden=true;
+          if(this.dirty) { this.keepDraft();this.status('有后续修改待同步…'); }
+          else { this.clearDraft();this.status('已保存到云端');this.message('全部修改已保存到 Supabase。'); }
+        } catch(error) {
+          this.keepDraft();this.status('未同步到云端，请勿关闭页面',true);this.message(error.message,true);
+          document.getElementById('cloud-retry').hidden=this.conflict;
+          this.busy=false;return;
+        }
+        this.busy=false;
+        if(this.dirty) this.timer=setTimeout(()=>this.flush(),100);
+      },
+      async reloadRemote() {
+        if(this.busy||!this.session) return;
+        if(!confirm('将先下载当前数据备份，然后用云端版本替换当前预览。继续吗？')) return;
+        this.backup();this.busy=true;this.lock(true);clearTimeout(this.timer);
+        try {
+          const row=await this.loadRemote();
+          if(!row) throw new Error('云端没有数据，请退出并重新登录后迁移。');
+          this.adopt(row.payload);this.revision=row.revision;this.dirty=false;this.conflict=false;this.clearDraft();
+          ['cloud-reload','cloud-recover','cloud-retry'].forEach(id=>document.getElementById(id).hidden=true);
+          this.lock(false);this.status('已从云端读取');this.message('已读取云端最新数据；之前的当前数据已下载备份。');
+        } catch(error) { this.message(error.message,true); }
+        finally { this.busy=false; }
+      },
+      recover() {
+        if(this.busy||!this.draft||this.conflict) return;
+        this.adopt(this.draft.payload);this.lock(false);
+        document.getElementById('cloud-recover').hidden=true;document.getElementById('cloud-reload').hidden=true;
+        this.queueSave();this.flush();
+      },
+      async logout() {
+        if(this.busy) { this.message('请求处理中，请稍候再退出。',true);return; }
+        if((this.dirty||this.draft) && !confirm('有未同步修改。退出前会下载当前数据备份，仍要退出吗？')) return;
+        if(this.dirty||this.draft) this.backup();
+        clearTimeout(this.timer);this.lock(true);
+        try { if(this.session) await this.request('/auth/v1/logout?scope=local',{method:'POST'}); } catch(_) {}
+        this.session=null;this.dirty=false;this.conflict=false;
+        ['cloud-migrate','cloud-recover','cloud-reload','cloud-retry','cloud-logout'].forEach(id=>document.getElementById(id).hidden=true);
+        document.getElementById('cloud-login').hidden=false;
+        this.status('已退出云端');this.message('已退出。当前数据只读，重新登录后读取云端。');
+      }
+    };
+    function stableJson(value) {
+      if(Array.isArray(value)) return '['+value.map(stableJson).join(',')+']';
+      if(value && typeof value==='object') return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+stableJson(value[k])).join(',')+'}';
+      return JSON.stringify(value);
+    }
+    document.getElementById('cloud-login').addEventListener('submit',e=>cloud.login(e));
+    document.getElementById('cloud-backup').addEventListener('click',()=>cloud.backup());
+    document.getElementById('cloud-migrate').addEventListener('click',()=>cloud.migrate());
+    document.getElementById('cloud-recover').addEventListener('click',()=>cloud.recover());
+    document.getElementById('cloud-reload').addEventListener('click',()=>cloud.reloadRemote());
+    document.getElementById('cloud-retry').addEventListener('click',()=>cloud.flush());
+    document.getElementById('cloud-logout').addEventListener('click',()=>cloud.logout());
+    window.addEventListener('online',()=>{if(cloud.dirty&&!cloud.conflict) cloud.flush();});
+    window.addEventListener('beforeunload',e=>{
+      if(cloud.dirty||cloud.busy||cloud.draft) { e.preventDefault();e.returnValue=''; }
+    });
+    render();
+  </script>
+</body>
+</html>
