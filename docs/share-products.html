@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>产品需求量 · 只读分享</title><link rel="stylesheet" href="./share-viewer.css"></head>
+<body data-share-view="products"><main class="shell">
+<header><h1>产品需求量</h1><span class="tag">只读分享</span></header>
+<div class="controls"><label>月份<select id="share-month" disabled aria-label="月份"></select></label><div class="range-label">日期范围<span class="range" id="share-range">—</span></div></div>
+<div class="muted" id="share-updated"></div><div class="muted" id="share-calendar"></div>
+<div class="status-line"><span class="muted" id="share-status" role="status">正在读取已发布数据…</span><button id="share-refresh">刷新数据</button></div>
+<div id="share-empty" class="panel empty" hidden>暂无已发布月份，请由编辑版发布当前月份后再查看。</div>
+<div id="share-content" hidden><section class="stats" id="share-stats"></section>
+<section class="panel"><h2>SLOTS产品分岗位需求量</h2>
+<div class="table-controls"><button data-share-mode="month" aria-pressed="true">月度对比</button><button data-share-mode="week" aria-pressed="false">每周对比</button>
+<details class="product-filter"><summary id="share-filter-title">产品筛选（全部）</summary><div class="product-menu"><div class="product-options" id="share-products-filter"></div><div class="product-actions"><button id="share-select-all">全选</button><button id="share-select-none">清空</button></div></div></details></div>
+<p class="muted" id="share-week-note"></p><p class="muted" id="share-filter-note"></p>
+<div class="table-wrap"><table><thead id="share-products-head"></thead><tbody id="share-products-body"></tbody><tfoot id="share-products-foot"></tfoot></table></div></section>
+<section class="panel"><h2>非SLOTS产品需求量</h2><div class="table-wrap"><table><thead><tr><th>产品</th><th>需求量/月</th><th>预留制作时间/月</th></tr></thead><tbody id="share-non-body"></tbody><tfoot id="share-non-foot"></tfoot></table></div></section></div>
+</main><script src="./demand-share.js"></script><script src="./share-viewer.js"></script></body></html>

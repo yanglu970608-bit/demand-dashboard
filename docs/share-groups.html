@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>小组调量 · 只读分享</title><link rel="stylesheet" href="./share-viewer.css"></head>
+<body data-share-view="groups"><main class="shell">
+<header><h1>小组调量</h1><span class="tag">只读分享</span></header>
+<div class="controls"><label>月份<select id="share-month" disabled aria-label="月份"></select></label><div class="range-label">日期范围<span class="range" id="share-range">—</span></div></div>
+<div class="muted" id="share-updated"></div><div class="muted" id="share-calendar"></div>
+<div class="status-line"><span class="muted" id="share-status" role="status">正在读取已发布数据…</span><button id="share-refresh">刷新数据</button></div>
+<div id="share-empty" class="panel empty" hidden>暂无已发布月份，请由编辑版发布当前月份后再查看。</div>
+<div id="share-content" hidden><section class="stats" id="share-stats"></section>
+<section class="panel"><h2>北京玩法小组需求量调整</h2><div class="group-summary" id="share-beijing-summary"></div><div class="table-wrap"><table class="group-table">
+<thead><tr><th class="fixed f1">小组</th><th class="fixed f2">负责人</th><th class="fixed f3">产品</th><th>产品需求</th><th>通用创新/月</th><th>Playable/月</th><th>小组总量/月</th><th>成都移动/月</th><th>成都单周移动/天</th><th>实际小组总量</th><th>人员承载力</th><th>余量/缺口</th><th>单需求制作时间（天）</th><th>人员数量</th><th>全职/组长负责量（天）</th><th>请假预留（天）</th><th>临时需求预留（天）</th></tr></thead><tbody id="share-beijing-body"></tbody></table></div></section>
+<section class="panel"><h2>成都玩法小组需求量调整</h2><div class="group-summary" id="share-chengdu-summary"></div><div class="table-wrap"><table class="chengdu-table"><thead><tr><th class="fixed f1">小组</th><th class="fixed f2">负责人</th><th class="fixed f3">产品</th><th>产品需求</th><th>产品制作天数</th><th>单需求制作时间（天）</th><th>应制作天数（天）</th><th>人员承载力（天）</th><th>余量/缺口（天）</th><th>人员数量</th><th>预留请假时间（天）</th></tr></thead><tbody id="share-chengdu-body"></tbody></table></div></section></div>
+</main><script src="./demand-share.js"></script><script src="./share-viewer.js"></script></body></html>

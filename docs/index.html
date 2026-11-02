@@ -143,7 +143,7 @@
     .group-summary .stat-value { font-size:21px; }
     .gap-ok { color:#21845e; } .gap-risk { color:#d24f4f; }
     .gap-balanced { color:var(--muted); }
-    #chengdu-alert { margin:0 0 16px; padding:10px 14px; border:1px solid #f1c6c6; border-radius:10px; background:#fff2f2; color:#bc3636; font-weight:600; }
+    #chengdu-alert { position:fixed;top:24px;left:50%;transform:translateX(-50%);z-index:1000;padding:12px 24px;border:1px solid #f1c6c6;border-radius:12px;background:#fff2f2;color:#bc3636;font-weight:600;box-shadow:0 8px 30px #29324a22;pointer-events:none; }
     [data-ctime-note]:not([hidden]) { display:block; margin-top:4px; }
     .group-products { padding:6px; border-radius:10px; display:flex; flex-wrap:nowrap; justify-content:center; align-items:center; gap:6px; min-height:48px; }
     #group-view table { border-collapse:separate; border-spacing:0; }
@@ -171,6 +171,21 @@
     @media (max-width:480px) { .compare-controls { gap:6px; flex-wrap:nowrap; } .compare-controls>.btn { padding:8px; white-space:nowrap; } .product-filter { padding:8px; } }
     @media (max-width:800px) { .date-range-fields { width:100%; } .date-field { width:192px; max-width:calc((100vw - 44px)/2); } }
     @media print { body { background:white; } .shell { max-width:none; padding:0; } .tabs { display:none !important; } .panel,.stat { break-inside:avoid; box-shadow:none; } }
+    /* Shared table style A: white cells, fine horizontal rules and opaque sticky columns. */
+    #dashboard-content { --table-head:#f7f9fc; --table-total:#edf2fa; }
+    #dashboard-content :is(.table-wrap,.pd-table) { border:0; border-radius:10px; }
+    #dashboard-content :is(.table-wrap,.pd-table) table { border-collapse:separate; border-spacing:0; font-size:14px; font-variant-numeric:tabular-nums; }
+    #dashboard-content :is(.table-wrap,.pd-table) :is(th,td) { padding:12px 8px; text-align:center; border:0; font-weight:400; height:62px; }
+    #dashboard-content :is(.table-wrap,.pd-table) thead th { height:48px; background:var(--table-head); color:#526175; font-size:12px; font-weight:600; }
+    #dashboard-content :is(.table-wrap,.pd-table) tbody tr>* { background:#fff; border-bottom:1px solid #edf0f5; }
+    #dashboard-content :is(.table-wrap,.pd-table) tbody th { color:var(--text); font-size:14px; }
+    #dashboard-content :is(.table-wrap,.pd-table) :is(input[type=number],.quantity,.weekly-value) { height:35px; padding:6px 7px; font:inherit; font-weight:400; }
+    #dashboard-content :is(.table-wrap,.pd-table) input[type=number] { border:1px solid transparent; border-radius:7px; background:transparent; }
+    #dashboard-content :is(.table-wrap,.pd-table) input[type=number]:hover { border-color:#d7dce5; }
+    #dashboard-content :is(.table-wrap,.pd-table) input[type=number]:focus { background:#fff; border-color:var(--brand); outline:2px solid #b9c9f5; }
+    #dashboard-content :is(.table-wrap,.pd-table) tfoot :is(th,td) { background:var(--table-total); border:0; font-size:14px; font-weight:600; }
+    #dashboard-content :is(.table-wrap,.pd-table) tfoot tr>:first-child { border-radius:10px 0 0 10px; }
+    #dashboard-content :is(.table-wrap,.pd-table) tfoot tr>:last-child { border-radius:0 10px 10px 0; }
   </style>
 </head>
 <body>
@@ -186,7 +201,7 @@
       <div id="cloud-message" role="status" aria-live="polite">正在连接 Supabase…</div>
       <div class="cloud-actions">
         <button class="btn primary" id="cloud-archive">数据存档</button>
-        <button class="btn" id="archive-clear" hidden>清除其他历史版本</button>
+        <button class="btn" id="archive-clear" hidden>清除所有版本</button>
         <button class="btn primary" id="cloud-migrate" hidden>备份并公开当前数据</button>
         <button class="btn" id="cloud-import" hidden>导入JSON备份预览</button>
         <input id="cloud-import-file" type="file" accept=".json,application/json" hidden>
@@ -215,11 +230,12 @@
           <div class="month-grid" id="month-grid"></div>
         </div>
       </div>
-      <span class="control-label">日期范围</span>
+      <span class="control-label date-range-label">日期范围</span>
       <div class="date-range-fields">
         <div class="date-picker"><button class="date-field" data-open-date="start" aria-label="选择开始日期" aria-expanded="false" aria-controls="date-popup"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 10h16M8 14h1m3 0h1m3 0h1M8 17h1m3 0h1"/></svg><span id="range-start-label">开始日期</span></button><input type="date" id="range-start" hidden></div>
         <div class="date-picker"><button class="date-field" data-open-date="end" aria-label="选择结束日期" aria-expanded="false" aria-controls="date-popup"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 10h16M8 14h1m3 0h1m3 0h1M8 17h1m3 0h1"/></svg><span id="range-end-label">结束日期</span></button><input type="date" id="range-end" hidden></div>
       </div>
+      <button class="btn" id="adopt-previous">采用上月数据</button>
       <div class="date-popup" id="date-popup" hidden>
         <div class="year-bar"><button class="arrow-btn" id="date-prev" aria-label="日历上个月"><svg viewBox="0 0 24 24"><path d="m14 7-5 5 5 5"/></svg></button><strong id="date-month-label"></strong><button class="arrow-btn" id="date-next" aria-label="日历下个月"><svg viewBox="0 0 24 24"><path d="m10 7 5 5-5 5"/></svg></button></div>
         <div class="date-grid" id="date-grid"></div>
@@ -229,13 +245,15 @@
     <div id="notice" role="status" aria-live="polite"></div>
     <div id="chengdu-alert" role="status" aria-live="polite" hidden>成都已超量</div>
     <nav class="tabs" aria-label="视图切换">
-      <button class="tab active" data-view="edit-view">编辑数据</button>
-      <button class="tab" data-view="group-view">小组调量</button>
+      <button class="tab active" data-view="group-view">小组调量</button>
+      <button class="tab" data-view="product-view">需求量方案</button>
+      <button class="tab" data-view="edit-view">产品需求量</button>
     </nav>
 
     <section class="stats" id="stats"></section>
+    <section id="product-view" hidden></section>
 
-    <section class="panel" id="edit-view">
+    <section class="panel" id="edit-view" hidden>
       <div class="panel-head"><h2>SLOTS产品分岗位需求量</h2><span class="hint">总量自动汇总；岗位下方显示相对上月的增减</span></div>
       <div class="compare-controls" aria-label="对比口径">
         <button class="btn" data-compare="month" aria-pressed="true">月度对比</button>
@@ -256,7 +274,7 @@
       </table></div>
     </section>
 
-    <section class="panel" id="non-slots-view">
+    <section class="panel" id="non-slots-view" hidden>
       <div class="panel-head"><h2>非SLOTS产品需求量</h2></div>
       <div class="table-wrap"><table>
         <thead><tr><th scope="col">产品</th><th scope="col">需求量/月</th><th scope="col">预留制作时间/月</th></tr></thead>
@@ -265,7 +283,7 @@
       </table></div>
     </section>
 
-    <section class="panel" id="group-view" hidden>
+    <section class="panel" id="group-view">
       <div class="panel-head"><h2>北京玩法小组需求量调整</h2><span class="hint">产品需求取“策划＋跨界”，其余参数均可调整</span></div>
       <div class="group-summary" id="group-summary"></div>
       <div class="table-wrap"><table>
@@ -274,7 +292,7 @@
       </table></div>
     </section>
 
-    <section class="panel" id="chengdu-view" hidden>
+    <section class="panel" id="chengdu-view">
       <div class="panel-head"><h2>成都玩法小组需求量调整</h2><span class="hint">SLOTS取北京成都移动合计；非SLOTS自动汇总至编辑数据</span></div>
       <div class="group-summary" id="chengdu-summary"></div>
       <div class="table-wrap"><table>
@@ -286,6 +304,16 @@
   </main>
 
   <style>
+    .date-range-label { margin-left:36px; }
+    #adopt-previous { height:46px;padding:0 20px;border:0;border-radius:13px;background:#fff;color:var(--ink);font-size:14px;font-weight:600;box-shadow:0 1px 3px #182b4610; }
+    #adopt-previous:hover { background:#edf3ff; }
+    [data-gderived="chengduWeek"],#chengdu-body .slots-row>td:nth-child(n+3):nth-child(-n+6) { background:#edf5ff !important; }
+    #group-body tr:first-child [data-gderived="chengduWeek"] { border-radius:12px 12px 0 0; }
+    #group-body tr:last-child [data-gderived="chengduWeek"] { border-radius:0 0 12px 12px; }
+    #chengdu-body .slots-row>td:nth-child(3) { border-radius:12px 0 0 12px; }
+    #chengdu-body .slots-row>td:nth-child(6) { border-radius:0 12px 12px 0; }
+    #chengdu-body .slots-row>td:nth-child(n+3):nth-child(-n+6) input { background:#f6faff; }
+    @media(max-width:700px) { .date-range-label { margin-left:0; } }
     #cloud-dialog { border:0;border-radius:16px;padding:24px;width:min(420px,calc(100vw - 40px));box-sizing:border-box;box-shadow:0 20px 70px #15244833;color:var(--text); }
     #cloud-dialog::backdrop { background:rgba(24,35,56,.35); }
     #cloud-dialog h2 { margin:0 0 12px;font-size:19px; }
@@ -301,6 +329,7 @@
       <input id="cloud-dialog-name" aria-label="存档名称" maxlength="80" autocomplete="off">
       <div class="dialog-actions">
         <button type="button" class="btn" id="cloud-dialog-cancel">取消</button>
+        <button type="button" class="btn" id="cloud-dialog-secondary" hidden>不存档</button>
         <button type="submit" class="btn primary" id="cloud-dialog-submit">保存</button>
       </div>
     </form>
@@ -321,7 +350,11 @@
       if(!window.dashboardBooted) location.reload();
     });
   </script>
-  <script src="./shared-cloud.js?v=20261029-4" onerror="reportDashboardBootFailure()"></script>
+  <script src="./shared-cloud.js?v=20261102-2" onerror="reportDashboardBootFailure()"></script>
+  <script src="./demand-share.js?v=20261102-2" onerror="reportDashboardBootFailure()"></script>
+  <script src="./share-publisher.js?v=20261102-2" onerror="reportDashboardBootFailure()"></script>
+  <script src="./product-demand.js?v=20261102-2" onerror="reportDashboardBootFailure()"></script>
+  <script src="./plan-suggestions.js?v=20261102-2" onerror="reportDashboardBootFailure()"></script>
   <script>
     // Public source contains only an empty template, never the user's business data.
     const initial = ['CB','CF','CR','DF','JC','VF','LS'].map(product=>({
@@ -347,7 +380,7 @@
     let data=store.months[selectedMonth].data;
     let groups=store.months[selectedMonth].groups;
     let compareMode='month';
-    let currentView='edit-view';
+    let currentView='group-view';
     let pickerYear=Number(selectedMonth.slice(0,4));
     let dateTarget='start', dateViewMonth=selectedMonth;
     function closeDatePicker() {
@@ -418,9 +451,15 @@
       });
     }
     let selectedProducts=new Set(initial.map(row=>row.product));
-    const undoByMonth=new Map();
+    const undoHistory=[];
     function rememberUndo() {
-      undoByMonth.set(selectedMonth,structuredClone(store.months[selectedMonth]));
+      undoHistory.push({
+        selectedMonth,
+        month:structuredClone(store.months[selectedMonth]),
+        plan:Object.fromEntries(['planBases','planAdjustments','planTargets'].map(key=>[key,structuredClone(store[key]?.[selectedMonth])])),
+        economics:structuredClone(store.productEconomics)
+      });
+      if(undoHistory.length>100) undoHistory.shift();
     }
     function rememberNumberEdit(el) {
       if(!el.dataset.undoCaptured) { rememberUndo(); el.dataset.undoCaptured='true'; }
@@ -446,6 +485,9 @@
       ['2026-10-01','2026-10-07']
     ];
     const makeupDays2026=new Set(['2026-01-04','2026-02-14','2026-02-28','2026-05-09','2026-09-20','2026-10-10']);
+    // 元旦本身是法定休假日，无需等待2027年年度调休通知。
+    // 全国年节及纪念日放假办法第二条；未据此推断其他2027年调休日。
+    const confirmedHolidayDates=new Set(['2027-01-01']);
 
     function monthEnd(month) {
       const [y,m]=month.split('-').map(Number);
@@ -457,6 +499,7 @@
       for(;date<=last;date.setUTCDate(date.getUTCDate()+1)) {
         const day=date.toISOString().slice(0,10);
         if(makeupDays2026.has(day)) { count++; continue; }
+        if(confirmedHolidayDates.has(day)) continue;
         if(holidayRanges2026.some(([a,b])=>day>=a && day<=b)) continue;
         if(date.getUTCDay()!==0 && date.getUTCDay()!==6) count++;
       }
@@ -479,10 +522,17 @@
       return withSign?signed(n):String(n);
     }
     function renderRangeStatus() {
-      document.getElementById('range-status').textContent='';
+      const range=period();
+      let complete=true;
+      for(const date=new Date(`${range.start}T00:00:00Z`),last=new Date(`${range.end}T00:00:00Z`);date<=last;date.setUTCDate(date.getUTCDate()+1)) {
+        const day=date.toISOString().slice(0,10);
+        if(day.slice(0,4)!=='2026'&&!confirmedHolidayDates.has(day)) {complete=false;break;}
+      }
+      document.getElementById('range-status').textContent=complete?'':
+        '所选范围包含尚未配置完整年度调休的日期；已扣除确认的假日（含2027年1月1日），其余暂按周一至周五估算工作日。';
     }
     function renderRange() {
-      const range=store.months[selectedMonth].dateRange;
+      const range=period();
       ['start','end'].forEach(key=>{
         const el=document.getElementById(`range-${key}`);
         el.min='1900-01-01'; el.max='9999-12-31';
@@ -642,6 +692,7 @@
       renderEditor();
       renderOutputs();
       renderNonSlots();
+      renderSharePublishControls();
     }
 
     function renderEditor() {
@@ -651,7 +702,8 @@
       const keys=visibleRoleKeys();
       document.getElementById('editor-head').innerHTML='<tr>'+['产品','总量',...keys.map(k=>roleLabels[k])].map(n=>`<th scope="col">${n}</th>`).join('')+'</tr>';
       const editor = document.getElementById('editor-body');
-      editor.innerHTML = data.map((row,i) => {
+      editor.innerHTML = orderedProducts(data).map(row => {
+        const i=data.indexOf(row);
         return `<tr data-product="${row.product}"><td><strong>${row.product}</strong></td><td class="readonly"><strong class="quantity" data-row="${i}" data-derived="total">${displayQuantity(total(row))}</strong><div class="role-change delta" data-row="${i}" data-change="total"></div></td>${keys.map(key=>`<td>${compareMode==='week'?`<span class="weekly-value" data-row="${i}" data-weekly="${key}">${displayQuantity(row[key])}</span>`:input(i,key,row[key])}<div class="role-change delta" data-row="${i}" data-change="${key}"></div></td>`).join('')}</tr>`;
       }).join('')+`<tr id="empty-products" hidden><td colspan="${keys.length+2}">没有符合筛选条件的产品，请调整产品选择。</td></tr>`;
       renderComparisons();
@@ -659,17 +711,22 @@
     }
     function renderNonSlots() {
       const rows=store.months[selectedMonth].nonSlots;
-      document.getElementById('non-slots-body').innerHTML=rows.map((row,i)=>`<tr><td><strong>${row.product}</strong></td>${['demand','reservedTime'].map(key=>`<td>${i<3?`<span class="quantity" title="由成都玩法小组需求量调整自动汇总">${formatQuantity(row[key])}</span>`:`<input type="number" min="0" step="1" value="${row[key]}" data-nonslot="${i}" data-nkey="${key}" aria-label="${row.product} ${key==='demand'?'需求量/月':'预留制作时间/月'}">`}<div class="role-change delta" data-nonslot-change="${i}" data-nkey="${key}"></div></td>`).join('')}</tr>`).join('');
+      document.getElementById('non-slots-body').innerHTML=orderedProducts(rows).map(row=>{
+        const i=rows.indexOf(row);
+        return `<tr><td><strong>${row.product}</strong></td>${['demand','reservedTime'].map(key=>`<td>${i<3?`<span class="quantity" title="由成都玩法小组需求量调整自动汇总">${nonSlotsDisplay(row[key],key)}</span>`:`<input type="number" min="0" step="1" value="${nonSlotsDisplay(row[key],key)}" data-nonslot="${i}" data-nkey="${key}" aria-label="${row.product} ${key==='demand'?'需求量/月':'预留制作时间/月'}">`}<div class="role-change delta" data-nonslot-change="${i}" data-nkey="${key}"></div></td>`).join('')}</tr>`;
+      }).join('');
       renderNonSlotsOutputs();
     }
     function nonSlotsChange(row,key) {
       const prior=store.months[previousMonth(selectedMonth)]?.nonSlots?.find(r=>r.product===row.product);
       return prior ? row[key]-prior[key] : null;
     }
+    function nonSlotsDisplay(value,key) {return key==='reservedTime'?String(Math.round(value)):formatQuantity(value);}
     function nonSlotsChangeText(value,key) {
       if(value===null) return '无上月明细';
+      if(key==='reservedTime') value=Math.round(value);
       if(value===0) return '';
-      return `${value>0?'+':''}${formatQuantity(value)}${key==='demand'?' 条/月':' 天/月'}`;
+      return `${value>0?'+':''}${nonSlotsDisplay(value,key)}${key==='demand'?' 条/月':' 天/月'}`;
     }
     function combinedChanges(changes) { return changes.includes(null)?null:changes.reduce((a,b)=>a+b,0); }
     function renderNonSlotsOutputs() {
@@ -683,11 +740,12 @@
       });
       document.getElementById('non-slots-foot').innerHTML='<tr><th scope="row">合计</th>'+['demand','reservedTime'].map(key=>{
         const value=rows.reduce((a,row)=>a+row[key],0), change=combinedChanges(rows.map(row=>nonSlotsChange(row,key)));
-        return `<td><span class="quantity" data-nonslot-sum="${key}">${value}</span><div class="role-change delta ${change>0?'up':change<0?'down':''}" data-nonslot-sum-change="${key}">${nonSlotsChangeText(change,key)}</div></td>`;
+        return `<td><span class="quantity" data-nonslot-sum="${key}">${nonSlotsDisplay(value,key)}</span><div class="role-change delta ${change>0?'up':change<0?'down':''}" data-nonslot-sum-change="${key}">${nonSlotsChangeText(change,key)}</div></td>`;
       }).join('')+'</tr>';
       renderStats();
     }
     function renderStats() {
+      if(currentView==='product-view') {renderProductDemandStats();return;}
       const rows=currentView==='edit-view'?visibleRows():data;
       const isGroup=currentView==='group-view';
       const monthTotal=rows.reduce((a,row)=>a+(isGroup?row.plan+row.cross:total(row)),0), range=period();
@@ -711,6 +769,7 @@
       renderStats();
       renderGroups();
       renderChengdu();
+      if(currentView==='product-view') renderProductDemand();
     }
     function chengduInput(i,j,key,value) {
       return `<input type="number" min="0" step="${key==='avgTime'?'0.1':key==='people'?'any':'1'}" value="${value}" data-cgroup="${i}" data-cproduct="${j}" data-ckey="${key}" aria-label="${store.months[selectedMonth].chengduGroups[i].name} ${j>=0?store.months[selectedMonth].chengduGroups[i].products[j].product:''} ${key}">`;
@@ -721,6 +780,7 @@
         const span=`rowspan="${g.products.length}"`;
         return `<tr>${j===0?`<td ${span} class="c-fixed c1"><strong>${g.name}</strong></td><td ${span} class="c-fixed c2">${g.owner}</td>`:''}<td class="c-fixed c3">${row.product}</td><td>${row.product==='SLOTS'?'<span data-cslots></span>':chengduInput(i,j,'demand',row.demand)}</td><td data-cdays="${i}-${j}" title="${row.legacyDays!==undefined?'原表有预留天数但需求为0，暂保留原值；编辑需求或制作时间后自动计算':''}"></td><td>${chengduInput(i,j,'avgTime',row.avgTime)}</td>${j===0?`<td ${span} class="derived" data-csum="${i}"></td><td ${span} class="derived" data-ccapacity="${i}"></td><td ${span} class="derived" data-cgap="${i}"></td><td ${span}>${chengduInput(i,-1,'people',g.people)}</td><td ${span}>${chengduInput(i,-1,'leave',g.leave)}</td>`:''}</tr>`;
       }).join('')).join('');
+      document.querySelector('[data-cslots]').closest('tr').classList.add('slots-row');
       updateChengduOutputs();
     }
     function updateChengduOutputs() {
@@ -730,6 +790,17 @@
           const cell=document.querySelector(`[data-cdays="${i}-${j}"]`);
           cell.textContent=formatQuantity(chengduDays(row,month));
         });
+        if(i===1) {
+          ['csum','ccapacity','cgap'].forEach(key=>{
+            const cell=document.querySelector(`[data-${key}="${i}"]`);
+            cell.textContent='—';cell.className='derived';
+          });
+          ['people','leave'].forEach(key=>{
+            const input=document.querySelector(`[data-cgroup="${i}"][data-cproduct="-1"][data-ckey="${key}"]`);
+            if(input) input.closest('td').textContent='—';
+          });
+          return;
+        }
         const required=g.products.reduce((a,r)=>a+chengduDays(r,month),0), capacity=g.people*period().days-g.leave, gap=capacity-required;
         const sumCell=document.querySelector(`[data-csum="${i}"]`);
         sumCell.textContent=formatQuantity(required);
@@ -738,11 +809,11 @@
         const gapCell=document.querySelector(`[data-cgap="${i}"]`);
         gapCell.textContent=status.text;
         gapCell.className=`derived ${status.cls}`;
-        if(i===0) document.getElementById('chengdu-alert').hidden=status.delta>=0;
       });
       document.querySelector('[data-cslots]').textContent=month.groups.reduce((a,g)=>a+g.chengdu,0);
-      const required=month.chengduGroups.reduce((a,g)=>a+g.products.reduce((n,r)=>n+chengduDays(r,month),0),0);
-      const capacity=month.chengduGroups.reduce((a,g)=>a+g.people*period().days-g.leave,0),gap=capacity-required;
+      const participating=month.chengduGroups.slice(0,1);
+      const required=participating.reduce((a,g)=>a+g.products.reduce((n,r)=>n+chengduDays(r,month),0),0);
+      const capacity=participating.reduce((a,g)=>a+g.people*period().days-g.leave,0),gap=capacity-required;
       const status=gapStatus(capacity,required);
       document.getElementById('chengdu-summary').innerHTML=[
         ['应制作总天数（天）',formatQuantity(required),''],
@@ -777,7 +848,7 @@
       const weeks=period().weeks;
       const slots=store.months[selectedMonth].chengduGroups[0].products.find(r=>r.product==='SLOTS');
       if(!weeks) return '—';
-      return formatQuantity(group.chengdu/weeks*slots.avgTime);
+      return (Math.round((group.chengdu/weeks*slots.avgTime+Number.EPSILON)*10)/10).toFixed(1);
     }
     function groupInput(i,key,value) { return `<input type="number" min="${key==='avgTime'?'0.1':'0'}" step="${key==='avgTime'?'0.1':key==='people'?'any':'1'}" value="${value}" data-group="${i}" data-gkey="${key}" aria-label="${groups[i].name} ${key}">`; }
     function renderGroups() {
@@ -832,7 +903,9 @@
       if(value===null) return;
       if(value===data[i][key]) return;
       rememberNumberEdit(e.target);
+      ensurePlanBase();
       data[i][key]=value;
+      updatePlanDelta(data[i],key);
       updateRow(i); renderOutputs();
       saveMonths();
     });
@@ -909,11 +982,11 @@
       saveMonths();
     });
     document.addEventListener('focusin',e=>{
-      if(e.target.matches('input[type=number]')) delete e.target.dataset.undoCaptured;
+      if(e.target.matches('input')) delete e.target.dataset.undoCaptured;
     });
     document.addEventListener('keydown',e=>{
       if((e.ctrlKey||e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase()==='z') {
-        if(!cloud.ready) return;
+        if(!cloud.ready||cloud.modalOpen) return;
         e.preventDefault();
         if(!e.repeat) undoLastChange();
         return;
@@ -933,6 +1006,8 @@
           const g=store.months[selectedMonth].chengduGroups[el.dataset.cgroup];
           el.value=(Number(el.dataset.cproduct)<0?g:g.products[el.dataset.cproduct])[el.dataset.ckey];
         }
+        else if(el.dataset.planProduct) el.value=planAdjustments()[el.dataset.planProduct]?.[el.dataset.planRole]??'';
+        else if(el.dataset.planTarget) el.value=remainingDirectorKol()??'';
       }
       el.setCustomValidity('');
       delete el.dataset.undoCaptured;
@@ -965,10 +1040,11 @@
     document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
       currentView=tab.dataset.view;
       document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===tab));
-      ['edit-view','group-view'].forEach(id=>document.getElementById(id).hidden=tab.dataset.view!==id);
+      ['edit-view','group-view','product-view'].forEach(id=>document.getElementById(id).hidden=tab.dataset.view!==id);
       document.getElementById('non-slots-view').hidden=tab.dataset.view!=='edit-view';
       document.getElementById('chengdu-view').hidden=tab.dataset.view!=='group-view';
       renderStats();
+      if(currentView==='product-view') renderProductDemand();
     }));
     document.querySelectorAll('[data-compare]').forEach(btn=>btn.addEventListener('click',()=>{
       compareMode=btn.dataset.compare;
@@ -1022,15 +1098,78 @@
     });
     function undoLastChange() {
       if(!cloud.ready) return;
-      const snapshot=undoByMonth.get(selectedMonth);
-      if(!snapshot) return;
       if(document.activeElement.matches('input')) document.activeElement.blur();
-      store.months[selectedMonth]=snapshot;
-      ({data,groups}=snapshot);
-      undoByMonth.delete(selectedMonth);
-      document.getElementById('notice').textContent='已撤销当前月份的上一步修改。';
+      const snapshot=undoHistory.pop();
+      if(!snapshot) return;
+      selectedMonth=snapshot.selectedMonth;
+      store.selectedMonth=selectedMonth;
+      store.months[selectedMonth]=snapshot.month;
+      for(const [key,value] of Object.entries(snapshot.plan)) {
+        if(value===undefined) {if(store[key]) delete store[key][selectedMonth];}
+        else {store[key]??={};store[key][selectedMonth]=value;}
+      }
+      ({data,groups}=snapshot.month);
+      if(snapshot.economics===undefined) delete store.productEconomics;
+      else store.productEconomics=snapshot.economics;
+      document.getElementById('notice').textContent=`已撤销 ${selectedMonth} 的上一步修改，三个界面已同步恢复。`;
       closeDatePicker();
       render(); saveMonths();
+    }
+    function hasMonthInputs(month) {
+      return month.data.some(r=>numericKeys.some(k=>r[k]!==0)) ||
+        month.nonSlots.some(r=>r.demand!==0||r.reservedTime!==0) ||
+        month.groups.some((g,i)=>g.avgTime!==1||['people','innovation','playable','chengdu','fulltime','leave','temporary'].some(k=>g[k]!==0)||JSON.stringify(g.products)!==JSON.stringify(groupInitial[i].products)) ||
+        month.chengduGroups.some(g=>g.people!==0||g.leave!==0||g.products.some(r=>r.demand!==0||r.avgTime!==0||r.legacyDays));
+    }
+    async function adoptPreviousMonth() {
+      if(cloud.actionPending||!cloud.ready) return;
+      cloud.actionPending=true;
+      try {
+        const deadline=Date.now()+12000;
+        while(cloud.busy&&Date.now()<deadline) await new Promise(resolve=>setTimeout(resolve,100));
+        if(cloud.busy||cloud.conflict||!cloud.ready) {cloud.message('请等待同步完成后重试。');return;}
+        const current=selectedMonth,prior=previousMonth(current),month=store.months[current];
+        if(!store.months[prior]) {cloud.message('没有可采用的上月数据。');return;}
+        if(hasMonthInputs(month)) {
+          const choice=await cloud.ask({title:'是否覆盖现有数据？',description:'将同时覆盖三个界面的本月需求量和小组配置，重建方案起点并清空岗位增减。当前日期范围、日花、回报比及编导KOL目标保留。',submit:'存档后覆盖',secondary:'直接覆盖'});
+          if(choice===null) return;
+          if(choice===true&&!await cloud.runArchiveAction('create')) return;
+        }
+        if(selectedMonth!==current||cloud.conflict) return;
+        const range=month.dateRange?structuredClone(month.dateRange):null;
+        rememberUndo();
+        const copied=structuredClone(store.months[prior]);
+        delete copied.baseline;
+        if(range) copied.dateRange=range;else delete copied.dateRange;
+        store.months[current]=copied;({data,groups}=copied);
+        if(store.planBases) delete store.planBases[current];
+        if(store.planAdjustments) delete store.planAdjustments[current];
+        if(store.planTargets?.[current]) store.planTargets[current].directorKolAnchor=0;
+        ensurePlanBase();
+        render();saveMonths();cloud.message('已采用上月数据，当前月份日期范围保持不变。');
+      } finally {
+        cloud.actionPending=false;
+        if(cloud.dirty&&!cloud.conflict) cloud.timer=setTimeout(()=>cloud.flush(),1200);
+      }
+    }
+    document.getElementById('adopt-previous').addEventListener('click',adoptPreviousMonth);
+    let chengduToastTimer,chengduBeforeEdit;
+    function chengduBalance() {
+      const month=store.months[selectedMonth],g=month.chengduGroups[0];
+      return gapStatus(g.people*period().days-g.leave,g.products.reduce((s,r)=>s+chengduDays(r,month),0)).delta;
+    }
+    function notifyChengduChange(before) {
+      const after=chengduBalance();
+      if(after<0&&after<before) {
+        const toast=document.getElementById('chengdu-alert');toast.hidden=false;
+        clearTimeout(chengduToastTimer);chengduToastTimer=setTimeout(()=>toast.hidden=true,1000);
+      }
+    }
+    for(const type of ['input','change']) {
+      document.getElementById('dashboard-content').addEventListener(type,e=>{
+        chengduBeforeEdit=e.target.matches('[data-gkey],[data-ckey],#range-start,#range-end')?chengduBalance():null;
+      },true);
+      document.getElementById('dashboard-content').addEventListener(type,()=>{if(chengduBeforeEdit!==null) notifyChengduChange(chengduBeforeEdit);});
     }
     const cloud=createSharedCloud({
       get:()=>store,
@@ -1041,12 +1180,14 @@
       set:snapshot=>{
         store=snapshot;selectedMonth=store.selectedMonth;({data,groups}=store.months[selectedMonth]);
         document.getElementById('notice').textContent='';
-        undoByMonth.clear();closeDatePicker();closeMonthPicker();render();
+        undoHistory.length=0;closeDatePicker();closeMonthPicker();render();
       }
     });
     render();
-    cloud.start();
+    cloud.start().then(applyLocalQuarterInputs);
     window.dashboardBooted=true;
+    setupProductDemand();
+    setupSharePublisher();
   </script>
 </body>
 </html>

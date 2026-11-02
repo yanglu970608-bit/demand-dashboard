@@ -8,17 +8,20 @@ function createSharedCloud(app) {
     cacheKey:'demand-shared-cache-v1',draftKey:'demand-shared-draft-v1',selectionKey:'demand-shared-selected-month',
     deviceKey:'demand-shared-device-id',deviceId:null,initialized:false,lastSeen:null,
     archivesBusy:false,archiveCount:0,archiveRows:[],actionPending:false,modalOpen:false,
-    ask({title,description,value=null,submit='确定'}) {
+    local:location.protocol==='file:',localKey:'demand-local-trial-v1',
+    ask({title,description,value=null,submit='确定',secondary=null}) {
       const dialog=this.el('cloud-dialog'),input=this.el('cloud-dialog-name'),form=this.el('cloud-dialog-form');
       this.el('cloud-dialog-title').textContent=title;
       this.el('cloud-dialog-description').textContent=description;
       this.el('cloud-dialog-submit').textContent=submit;
       input.hidden=value===null;input.required=value!==null;input.value=value||'';
+      const extra=this.el('cloud-dialog-secondary');extra.hidden=!secondary;extra.textContent=secondary||'';
       this.modalOpen=true;
       return new Promise(resolve=>{
         const finish=result=>{
           dialog.close();this.modalOpen=false;
           form.onsubmit=null;dialog.oncancel=null;this.el('cloud-dialog-cancel').onclick=null;
+          extra.onclick=null;
           resolve(result);
         };
         form.onsubmit=e=>{
@@ -30,18 +33,60 @@ function createSharedCloud(app) {
         input.setCustomValidity('');
         dialog.oncancel=e=>{e.preventDefault();finish(null);};
         this.el('cloud-dialog-cancel').onclick=()=>finish(null);
+        extra.onclick=()=>finish('skip');
         dialog.showModal();
         if(value!==null) {input.focus();input.select();}
         else this.el('cloud-dialog-cancel').focus();
       });
     },
     el(id) { return document.getElementById(id); },
-    message(text,error=false) { const e=this.el('cloud-message');e.textContent=text;e.dataset.error=String(error); },
-    status(text,error=false) { const e=this.el('save-status');e.textContent=text;e.dataset.error=String(error); },
+    message(text,error=false) { const e=this.el('cloud-message');e.textContent=this.local?text.replaceAll('云端','本地副本').replaceAll('数据和历史版本已写入 Supabase','数据和历史版本已保存到本地副本').replaceAll('公共共享数据：所有访问者均可编辑。修改会同步给其他人。','').replaceAll('保存成功。数据和历史版本已保存到本地副本。','').replaceAll('所有访问者将同步','仅更新本地副本').replaceAll('所有访问者','本地页面'):text;e.dataset.error=String(error);e.hidden=!e.textContent; },
+    status(text,error=false) { const e=this.el('save-status');e.textContent=this.local?text.replaceAll('云端','本地'):text;e.dataset.error=String(error); },
     lock(value) { this.ready=!value;this.el('dashboard-content').inert=value; },
     read(key) { try { return JSON.parse(localStorage.getItem(key)); } catch(_) { return null; } },
     write(key,value) { try { localStorage.setItem(key,JSON.stringify(value));return true; } catch(_) { return false; } },
     async request(path,body) {
+      if(this.local) return this.localRequest(path,body);
+      return this.remoteRequest(path,body);
+    },
+    async localRequest(path,body) {
+      let db=this.read(this.localKey);
+      if(!db) {
+        let payload;
+        try {
+          const rows=await this.remoteRequest('/rest/v1/demand_shared_state?id=eq.1&select=payload,revision,updated_at');
+          payload=rows[0]?.payload;
+        } catch(_) {}
+        db={state:{payload:this.wire(payload||app.get()),revision:1},archives:[],nextId:1};
+        if(!this.write(this.localKey,db)) throw new Error('本地存储不可用，请允许浏览器保存本地调试数据。');
+      }
+      if(body===undefined) {
+        if(path.includes('demand_shared_state')) return [structuredClone(db.state)];
+        return structuredClone(db.archives.filter(a=>!a.hidden).sort((a,b)=>b.id-a.id));
+      }
+      if(body.expected_revision!==db.state.revision) {
+        const error=new Error('本地副本已被另一页面修改，请重新加载。');error.code='VERSION_CONFLICT';throw error;
+      }
+      let payload=db.state.payload,id=body.archive_id;
+      if(path.endsWith('/save_demand_shared')) payload=this.wire(body.new_payload);
+      else if(path.endsWith('/manage_demand_archive_v2')) {
+        if(body.action==='create') {
+          payload=this.wire(body.new_payload);id=db.nextId++;
+          const version=Math.max(0,...db.archives.filter(a=>a.month===body.archive_month).map(a=>a.version))+1;
+          db.archives.push({id,month:body.archive_month,version,name:body.archive_name,payload:{...structuredClone(payload),selectedMonth:body.archive_month}});
+        } else if(body.action==='restore') {
+          const archive=db.archives.find(a=>a.id===id&&!a.hidden);
+          if(!archive) throw new Error('本地存档不存在。');
+          payload=structuredClone(archive.payload);
+        } else if(body.action==='clear') db.archives.forEach(a=>a.hidden=true);
+        else throw new Error('不支持的本地操作。');
+      } else throw new Error('本地调试禁止线上写入。');
+      db.state={payload,revision:db.state.revision+1,updated_at:new Date().toISOString()};
+      if(!this.write(this.localKey,db)) throw new Error('本地保存失败，数据未确认保存。');
+      return path.endsWith('/save_demand_shared')?db.state:{state:db.state,archive_id:id};
+    },
+    async remoteRequest(path,body) {
+      if(this.local&&body!==undefined) throw new Error('本地调试禁止线上写入。');
       let response,text;
       const controller=new AbortController();
       const timeout=setTimeout(()=>controller.abort(),10000);
@@ -303,7 +348,7 @@ function createSharedCloud(app) {
         const rows=await this.request('/rest/v1/demand_shared_archives?select=id,month,version,name&order=id.desc&limit=50');
         this.archiveCount=rows.length;
         this.archiveRows=rows;
-        this.el('archive-clear').hidden=rows.length<2;
+        this.el('archive-clear').hidden=rows.length<1;
         const list=this.el('archive-list');list.replaceChildren();
         for(const row of rows) {
           const button=document.createElement('button');button.className='btn';
@@ -327,7 +372,7 @@ function createSharedCloud(app) {
         const deadline=Date.now()+12000;
         while(this.busy&&Date.now()<deadline) await new Promise(resolve=>setTimeout(resolve,100));
         if(this.busy) {this.message('同步尚未完成，请稍后重试。');return;}
-        await this.runArchiveAction(action,row);
+        return await this.runArchiveAction(action,row);
       } finally {
         this.actionPending=false;
         if(this.dirty&&!this.conflict) this.timer=setTimeout(()=>this.flush(),1200);
@@ -339,7 +384,7 @@ function createSharedCloud(app) {
       if(!this.ready) {
         this.message('请先恢复未同步修改或读取最新云端数据。');return;
       }
-      if(action==='clear'&&this.archiveCount<2) return;
+      if(action==='clear'&&this.archiveCount<1) return;
       let name=null;
       if(action==='create') {
         const month=app.get().selectedMonth;
@@ -350,7 +395,7 @@ function createSharedCloud(app) {
         name=name.trim();
         if(name.length>80||!name) {this.message('名称须为1–80个字符。',true);return;}
       }
-      if(action==='clear'&&!await this.ask({title:'清除历史版本',description:'清除顶部全部存档版本，当前正在使用的数据保持不变。后台恢复记录仍保留。',submit:'确认清除'})) return;
+      if(action==='clear'&&!await this.ask({title:'清除所有版本',description:'清除顶部全部存档版本，当前正在使用的数据保持不变。后台恢复记录仍保留。',submit:'确认清除'})) return;
       // Never discard an unsynced edit when switching versions or changing archive metadata.
       if(action!=='create'&&this.dirty) {
         await this.flush();if(this.dirty||this.conflict) return;
@@ -375,6 +420,7 @@ function createSharedCloud(app) {
         this.base=payload;this.revision=state.revision;this.write(this.cacheKey,state);
         this.dirty=false;this.clearDraft();
         this.status('已保存到云端');this.message(action==='create'?'数据存档成功。':action==='restore'?'已使用选定版本，所有访问者将同步。':action==='rename'?'存档名称已更新。':'历史版本已全部从列表清除，当前数据保持不变。');
+        return true;
       } catch(error) {
         this.message(error.message,true);
         if(error.code?.includes('VERSION_CONFLICT')) {
@@ -386,6 +432,12 @@ function createSharedCloud(app) {
       }
     }
   };
+  if(cloud.local) {
+    for(const key of ['cacheKey','draftKey','selectionKey','deviceKey']) cloud[key]='local-trial-'+cloud[key];
+    document.querySelector('.cloud-panel h2').hidden=true;
+    document.querySelector('.cloud-panel h2').nextElementSibling.hidden=true;
+    document.querySelector('.cloud-panel').setAttribute('aria-label','数据存档');
+  }
   document.getElementById('cloud-migrate').addEventListener('click',()=>cloud.initialize());
   document.getElementById('cloud-recover').addEventListener('click',()=>cloud.recover());
   document.getElementById('cloud-reload').addEventListener('click',()=>cloud.reloadRemote());
