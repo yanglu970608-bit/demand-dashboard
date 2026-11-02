@@ -70,7 +70,7 @@ function setupSharePublisher() {
   const titles={products:'产品需求量',groups:'小组调量'};
   for(const [view,id] of [['products','edit-view'],['groups','group-view']]) {
     const panel=document.createElement('div');panel.className='share-publish-tools';
-    panel.innerHTML=`<div class="share-publish-actions"><button class="btn" data-share-publish="${view}">更新分享数据</button><a class="btn" href="./share-${view}.html" target="_blank" rel="noopener">预览分享版</a><button class="btn" data-share-copy="${view}">复制分享链接</button></div><p class="hint" role="status" data-share-status="${view}"></p>`;
+    panel.innerHTML=`<div class="share-publish-actions"><button class="btn" data-share-publish="${view}">更新分享数据</button><button class="btn" data-share-copy="${view}">复制分享链接</button></div><p class="hint" role="status" data-share-status="${view}"></p>`;
     document.getElementById(id).querySelector('.panel-head').after(panel);
   }
   const style=document.createElement('style');
@@ -80,7 +80,7 @@ function setupSharePublisher() {
     const copy=e.target.closest('[data-share-copy]');
     if(copy) {
       const status=document.querySelector(`[data-share-status="${copy.dataset.shareCopy}"]`);
-      if(location.protocol==='file:') {status.textContent='当前为本地测试，正式链接需部署后使用；请先点击“预览分享版”。';return;}
+      if(location.protocol==='file:') {status.textContent='当前为本地测试；请在线上编辑版复制正式分享链接。';return;}
       const url=new URL(`share-${copy.dataset.shareCopy}.html`,location.href).href;
       try {await navigator.clipboard.writeText(url);status.textContent='分享链接已复制，仅展示该界面的已发布数据。';}
       catch(_) {status.textContent=`请复制此分享链接：${url}`;}
