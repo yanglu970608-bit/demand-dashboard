@@ -261,7 +261,7 @@ function updatePlanSuggestionPreview() {
   rows.forEach((row,i)=>{
     root.querySelector(`[data-suggest-total="${i}"]`).textContent=String(total(row));
     root.querySelector(`[data-suggest-share="${i}"]`).innerHTML=productBar(percent(portion(total(row),all)),portion(total(row),all));
-    root.querySelector(`[data-suggest-change="${i}"]`).innerHTML=productBar(signed(deltas[i]),deltas[i]/maxDelta*100,'change');
+    root.querySelector(`[data-suggest-change="${i}"]`).innerHTML=productBar(signed(deltas[i]),deltas[i]/maxDelta*100,'demand');
     const showReason=minDelta!==maxSignedDelta&&(deltas[i]===minDelta||deltas[i]===maxSignedDelta);
     root.querySelector(`[data-suggest-reason="${i}"]`).textContent=showReason?suggestionReason(s.metrics[i]):'';
     root.querySelector(`[data-suggest-edited="${i}"]`).textContent=showReason&&s.edited.has(i)?'已手动修改':'';

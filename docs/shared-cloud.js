@@ -137,7 +137,8 @@ function createSharedCloud(app) {
         if(m.data.some((r,i)=>r.product!==products[i]||['director','kol','plan','image','cross'].some(k=>!num(r[k],true))))
           throw new Error('产品需求必须是非负整数。');
         app.migrate(m);
-        if(m.nonSlots.length!==4||m.nonSlots.some((r,i)=>r.product!==non[i]||!num(r.demand,true)||!num(r.reservedTime)))
+        const localName=c=>typeof c==='string'&&/^[A-Z0-9\u4e00-\u9fff][A-Z0-9\u4e00-\u9fff +_.()-]{0,29}$/.test(c)&&!['SLOTS','CC',...products].includes(c);
+        if(m.nonSlots.length<4||m.nonSlots.length>60||new Set(m.nonSlots.map(r=>r.product)).size!==m.nonSlots.length||m.nonSlots.some((r,i)=>(i<4?r.product!==non[i]:!localName(r.product))||!num(r.demand,true)||!num(r.reservedTime)))
           throw new Error('非SLOTS结构异常。');
         const assigned=m.groups.flatMap(g=>g.products||[]);
         if(assigned.length!==7||new Set(assigned).size!==7||assigned.some(p=>!products.includes(p))) throw new Error('北京产品归属重复或遗漏。');
@@ -149,8 +150,9 @@ function createSharedCloud(app) {
         if(m.chengduGroups.length!==2) throw new Error('成都小组结构异常。');
         m.chengduGroups.forEach((g,i)=>{
           const codes=i===0?['SLOTS','TU+MT','RD','DEER']:['TU+MT'];
-          if(typeof g.name!=='string'||typeof g.owner!=='string'||!num(g.people)||!num(g.leave,true)||g.products.length!==codes.length||
-            g.products.some((r,j)=>r.product!==codes[j]||!num(r.demand,true)||!num(r.avgTime))) throw new Error('成都小组参数异常。');
+          if(typeof g.name!=='string'||typeof g.owner!=='string'||!num(g.people)||!num(g.leave,true)||
+            (g.products.length<codes.length||g.products.length>30||new Set(g.products.map(r=>r.product)).size!==g.products.length)||
+            g.products.some((r,j)=>(j<codes.length?r.product!==codes[j]:!localName(r.product)||!m.nonSlots.some(n=>n.product===r.product))||!num(r.demand,true)||!num(r.avgTime))) throw new Error('成都小组参数异常。');
         });
         if(m.dateRange) {
           const {start,end}=m.dateRange;

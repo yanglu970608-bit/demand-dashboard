@@ -61,7 +61,7 @@
       const prior=old.products.filter(r=>list.some(x=>x.product===r.product));
       if(prior.length!==list.length)return null;
       const current=sum(list,key),before=sum(prior,key);
-      return weekly?(weeks&&old.period.weeks?current/weeks-before/old.period.weeks:null):current-before;
+      return weekly?(weeks?(current-before)/weeks:null):current-before;
     };
     const totalChange=compare(rows,'total'),nonTotal=sum(p.nonSlots,'demand');
     const stats=[stat('SLOTS需求量',`${fmt(value(sum(rows,'total')),weekly?1:2)} ${unit}`)];
@@ -81,7 +81,7 @@
     $('share-non-body').innerHTML=p.nonSlots.map(r=>`<tr><th>${esc(r.product)}</th>${ncells([r])}</tr>`).join('');
     $('share-non-foot').innerHTML=`<tr><th>合计</th>${ncells(p.nonSlots)}</tr>`;
     document.querySelectorAll('[data-share-mode]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.shareMode===mode)));
-    $('share-week-note').textContent=weekly?`本月按 ${weeks} 周计算${old?`；上月按 ${old.period.weeks} 周计算`:''}。${weeks===0?'所选范围无工作周，周均量无法计算。':''}`:'';
+    $('share-week-note').textContent=weekly?`本月按 ${weeks} 周计算。每周量＝本月总量÷本月工作周数；每周增减＝（本月总量－上月总量）÷本月工作周数。${weeks===0?'所选范围无工作周，周均量无法计算。':''}`:'';
     $('share-filter-title').textContent=`产品筛选（${filtered.size===7?'全部':`${filtered.size}项`}）`;
     $('share-filter-note').textContent=`显示 ${rows.length} / ${p.products.length} 个产品；SLOTS汇总与合计随筛选更新。${!old&&selected>'2026-11'?'上月尚未发布，不显示变化。':''}`;
   }

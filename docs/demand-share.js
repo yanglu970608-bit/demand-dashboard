@@ -12,6 +12,9 @@
   const exact=(o,keys)=>o&&typeof o==='object'&&!Array.isArray(o)&&Object.keys(o).sort().join('|')===[...keys].sort().join('|');
   const validNumbers=(o,keys)=>keys.every(k=>numeric(o[k]));
   const unique=(rows,allowed)=>Array.isArray(rows)&&rows.length===allowed.length&&new Set(rows.map(r=>r.product)).size===allowed.length&&rows.every(r=>allowed.includes(r.product));
+  const localRows=(rows,required,max)=>Array.isArray(rows)&&rows.length<=max
+    &&required.every(c=>rows.some(r=>r.product===c))&&new Set(rows.map(r=>r.product)).size===rows.length
+    &&rows.every(r=>typeof r.product==='string'&&/^[A-Z0-9\u4e00-\u9fff][A-Z0-9\u4e00-\u9fff +_.()-]{0,29}$/.test(r.product)&&(required.includes(r.product)||!['SLOTS','CC',...codes].includes(r.product)));
   function validate(p,view) {
     if(!p||p.schemaVersion!==1||!validMonth(p.month)) return false;
     const r=p.period;
@@ -21,7 +24,7 @@
       ||r.start>r.end||(Date.parse(r.end)-Date.parse(r.start))/86400000>366) return false;
     if(view==='products') return exact(p,['schemaVersion','month','period','products','nonSlots'])
       &&unique(p.products,codes)&&p.products.every(row=>exact(row,['product',...roles])&&roles.every(k=>Number.isSafeInteger(row[k])&&row[k]>=0&&row[k]<=1e7))
-      &&unique(p.nonSlots,nonCodes)&&p.nonSlots.every(row=>exact(row,['product','demand','reservedTime'])&&validNumbers(row,['demand','reservedTime'])&&row.demand>=0&&Number.isInteger(row.demand)&&row.reservedTime>=0);
+      &&(unique(p.nonSlots,nonCodes)||localRows(p.nonSlots,nonCodes,60))&&p.nonSlots.every(row=>exact(row,['product','demand','reservedTime'])&&validNumbers(row,['demand','reservedTime'])&&row.demand>=0&&Number.isInteger(row.demand)&&row.reservedTime>=0);
     const gnums=['demand','innovation','playable','total','chengdu','actual','avgTime','people','fulltime','leave','temporary'];
     if(view!=='groups'||!exact(p,['schemaVersion','month','period','slotsDemand','beijing','chengdu'])||!numeric(p.slotsDemand)
       ||!Array.isArray(p.beijing)||p.beijing.length!==4||!Array.isArray(p.chengdu)||p.chengdu.length!==2) return false;
@@ -31,7 +34,7 @@
         &&validNumbers(g,gnums)&&['capacity','chengduWeek'].every(k=>g[k]===null||numeric(g[k])))
       &&p.chengdu.every((g,i)=>exact(g,['name','owner','products','required','capacity','people','leave','participating'])
         &&text(g.name)&&text(g.owner)&&g.participating===(i===0)&&validNumbers(g,['required','capacity','people','leave'])
-        &&unique(g.products,i===0?['SLOTS','TU+MT','RD','DEER']:['TU+MT'])
+        &&(unique(g.products,i===0?['SLOTS','TU+MT','RD','DEER']:['TU+MT'])||localRows(g.products,i===0?['SLOTS','TU+MT','RD','DEER']:['TU+MT'],30))
         &&g.products.every(r=>exact(r,['product','demand','days','avgTime'])&&validNumbers(r,['demand','days','avgTime'])));
   }
   async function request(path) {

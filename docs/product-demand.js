@@ -18,8 +18,8 @@ function money(value) {return value===null||value===undefined?'—':'$'+Number(v
 function percent(value) {return value===null?'—':`${Math.sign(value)*Math.round(Math.abs(value))}%`;}
 function portion(value,total) {return total>0?value/total*100:null;}
 function productBar(label,value,kind='share') {
-  const color=kind==='share'?'#79dfba':value<0?'#f67b8c':'#aeb9f5';
-  return `<div class="pd-metric"><span>${label}</span><div class="pd-track"><i style="width:${value===null?0:Math.min(100,Math.abs(value))}%;background:${color};${kind==='change'&&value<0?'margin-left:auto':''}"></i></div></div>`;
+  const color=kind==='demand'?(value<0?'#21845e':'#d24f4f'):kind==='share'?'#79dfba':value<0?'#f67b8c':'#aeb9f5';
+  return `<div class="pd-metric"><span${kind==='demand'&&value?' style="color:'+color+'"':''}>${label}</span><div class="pd-track"><i style="width:${value===null?0:Math.min(100,Math.abs(value))}%;background:${color};${['change','demand'].includes(kind)&&value<0?'margin-left:auto':''}"></i></div></div>`;
 }
 function productEconomicsTotals(codes) {
   const q=economics()[quarterPair().current]||{};
@@ -161,7 +161,7 @@ function renderProductDemand() {
       const base=planBaseRows().find(p=>p.product===r.product),delta=deltaFor(r);
       return `<tr><th>${productName(r.product)}</th><td>${count(r)}</td>
         <td>${productBar(percent(portion(count(r),countTotal)),portion(count(r),countTotal))}</td>
-        <td>${productBar(delta===null?'—':`${delta>0?'+':''}${delta}`,delta===null?null:delta/maxDelta*100,'change')}</td>
+        <td>${productBar(delta===null?'—':`${delta>0?'+':''}${delta}`,delta===null?null:delta/maxDelta*100,'demand')}</td>
         ${group.slots&&!planRolesCollapsed?numericKeys.map(k=>`<td><input type="number" step="1" min="${-base[k]}" max="${10000000-base[k]}" data-plan-product="${r.product}" data-plan-role="${k}" value="${planAdjustments()[r.product]?.[k]??''}" aria-label="${productName(r.product)} ${roleLabels[k]}增减"></td>`).join(''):''}</tr>`;
     }).join('');
     return `<section class="panel pd-section ${group.slots?'':'pd-nonslots'}"><div class="pd-heading"><h2>${group.name}产品需求量</h2>${group.slots?`<div class="pd-actions"><button class="btn" data-toggle-roles aria-expanded="${!planRolesCollapsed}">${planRolesCollapsed?'展开':'收起'}岗位增减</button><button class="btn primary" data-ai-suggest>AI建议</button></div>`:''}</div><div class="pd-pair">

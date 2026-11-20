@@ -117,7 +117,7 @@
     @media print { .month-controls,#notice,.save-tools,.product-filter,.filter-summary { display:none; } }
     input[type=number]:focus { outline:2px solid #b9c9f5; border-color:var(--brand); }
     .derived { font-weight:700; }
-    .delta.down { color:#d24f4f; } .delta.up { color:#21845e; }
+    .delta.down { color:#21845e; } .delta.up { color:#d24f4f; }
     .role-change { margin-top:5px; font-size:12px; color:var(--muted); font-weight:400; text-align:center; }
     .role-change:empty { display:none; }
     .compare-controls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
@@ -351,11 +351,12 @@
       if(!window.dashboardBooted) location.reload();
     });
   </script>
-  <script src="./shared-cloud.js?v=20261102-2" onerror="reportDashboardBootFailure()"></script>
-  <script src="./demand-share.js?v=20261102-2" onerror="reportDashboardBootFailure()"></script>
+  <script src="./shared-cloud.js?v=20261120-2" onerror="reportDashboardBootFailure()"></script>
+  <script src="./demand-share.js?v=20261120-2" onerror="reportDashboardBootFailure()"></script>
   <script src="./share-publisher.js?v=20261102-3" onerror="reportDashboardBootFailure()"></script>
-  <script src="./product-demand.js?v=20261102-2" onerror="reportDashboardBootFailure()"></script>
-  <script src="./plan-suggestions.js?v=20261102-2" onerror="reportDashboardBootFailure()"></script>
+  <script src="./chengdu-products.js?v=20261120-2" onerror="reportDashboardBootFailure()"></script>
+  <script src="./product-demand.js?v=20261120-2" onerror="reportDashboardBootFailure()"></script>
+  <script src="./plan-suggestions.js?v=20261120-2" onerror="reportDashboardBootFailure()"></script>
   <script>
     // Public source contains only an empty template, never the user's business data.
     const initial = ['CB','CF','CR','DF','JC','VF','LS'].map(product=>({
@@ -569,8 +570,7 @@
       if(before===undefined || before===null) return null;
       const current=key==='total'?total(row):row[key];
       if(compareMode==='month') return current-before;
-      const currentWeek=weeklyQuantity(current), priorWeek=weeklyQuantity(before,previousMonth(selectedMonth));
-      return currentWeek===null || priorWeek===null ? null : currentWeek-priorWeek;
+      return weeklyQuantity(current-before);
     }
     function changeText(value) {
       if(value===null) return compareMode==='week'?'暂无可比周量':'无上月明细';
@@ -620,9 +620,10 @@
     function chengduDemand(row,month) { return row.product==='SLOTS'?month.groups.reduce((a,g)=>a+g.chengdu,0):row.demand; }
     function chengduDays(row,month) { return row.legacyDays??chengduDemand(row,month)*row.avgTime; }
     function syncChengdu(month) {
-      ['TU+MT','RD','DEER'].forEach(code=>{
+      [...new Set(month.chengduGroups.flatMap(g=>g.products).map(r=>r.product).filter(c=>c!=='SLOTS'))].forEach(code=>{
         const rows=month.chengduGroups.flatMap(g=>g.products).filter(r=>r.product===code);
-        const target=month.nonSlots.find(r=>r.product===code);
+        let target=month.nonSlots.find(r=>r.product===code);
+        if(!target){target={product:code,demand:0,reservedTime:0};month.nonSlots.push(target);}
         target.demand=rows.reduce((a,r)=>a+r.demand,0);
         target.reservedTime=Number(rows.reduce((a,r)=>a+chengduDays(r,month),0).toFixed(6));
       });
@@ -699,7 +700,7 @@
     function renderEditor() {
       const note=document.getElementById('week-note');
       note.hidden=compareMode!=='week';
-      note.textContent=`本月按 ${period().weeks} 周计算；上月按 ${period(previousMonth(selectedMonth)).weeks} 周计算。周变化＝本月月量÷本月周数－上月月量÷上月周数。`;
+      note.textContent=`本月按 ${period().weeks} 周计算。每周量＝本月总量÷本月工作周数；每周增减＝（本月总量－上月总量）÷本月工作周数。`;
       const keys=visibleRoleKeys();
       document.getElementById('editor-head').innerHTML='<tr>'+['产品','总量',...keys.map(k=>roleLabels[k])].map(n=>`<th scope="col">${n}</th>`).join('')+'</tr>';
       const editor = document.getElementById('editor-body');
@@ -714,7 +715,8 @@
       const rows=store.months[selectedMonth].nonSlots;
       document.getElementById('non-slots-body').innerHTML=orderedProducts(rows).map(row=>{
         const i=rows.indexOf(row);
-        return `<tr><td><strong>${row.product}</strong></td>${['demand','reservedTime'].map(key=>`<td>${i<3?`<span class="quantity" title="由成都玩法小组需求量调整自动汇总">${nonSlotsDisplay(row[key],key)}</span>`:`<input type="number" min="0" step="1" value="${nonSlotsDisplay(row[key],key)}" data-nonslot="${i}" data-nkey="${key}" aria-label="${row.product} ${key==='demand'?'需求量/月':'预留制作时间/月'}">`}<div class="role-change delta" data-nonslot-change="${i}" data-nkey="${key}"></div></td>`).join('')}</tr>`;
+        const managed=store.months[selectedMonth].chengduGroups.some(g=>g.products.some(r=>r.product===row.product));
+        return `<tr><td><strong>${row.product}</strong></td>${['demand','reservedTime'].map(key=>`<td>${managed?`<span class="quantity" title="由成都玩法小组需求量调整自动汇总">${nonSlotsDisplay(row[key],key)}</span>`:`<input type="number" min="0" step="1" value="${nonSlotsDisplay(row[key],key)}" data-nonslot="${i}" data-nkey="${key}" aria-label="${row.product} ${key==='demand'?'需求量/月':'预留制作时间/月'}">`}<div class="role-change delta" data-nonslot-change="${i}" data-nkey="${key}"></div></td>`).join('')}</tr>`;
       }).join('');
       renderNonSlotsOutputs();
     }
@@ -970,7 +972,7 @@
       target[key]=value;
       if(j>=0) delete target.legacyDays;
       syncChengdu(store.months[selectedMonth]);
-      updateChengduOutputs();renderNonSlots();saveMonths();
+      updateChengduOutputs();renderNonSlots();renderProductDemand();saveMonths();
     });
     document.getElementById('non-slots-body').addEventListener('input',e=>{
       if(!e.target.matches('input[data-nonslot]')) return;
@@ -1189,6 +1191,7 @@
     window.dashboardBooted=true;
     setupProductDemand();
     setupSharePublisher();
+    setupChengduProducts();
   </script>
 </body>
 </html>
