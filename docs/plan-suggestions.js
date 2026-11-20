@@ -26,24 +26,6 @@ function allocateSuggestionUnits(amount,weights,caps,spread=false) {
   }
   return out;
 }
-function spreadSuggestionUnits(amount,weights,caps,span=0) {
-  // Offsets plus integer remainders: PC spans at most 3, DK 2 (5 combined).
-  const min=Math.min(...weights),max=Math.max(...weights);
-  const offsets=weights.map(w=>max>min?Math.round(span*(w-min)/(max-min)):0);
-  const target=Math.min(Math.max(0,Math.round(amount)),caps.reduce((s,n)=>s+n,0));
-  let low=-span,high=Math.min(target,Math.max(0,...caps));
-  const at=(i,level)=>Math.min(caps[i],Math.max(0,level+offsets[i]));
-  while(low<high) {
-    const mid=Math.ceil((low+high)/2);
-    if(caps.reduce((s,n,i)=>s+at(i,mid),0)<=target) low=mid;
-    else high=mid-1;
-  }
-  const out=caps.map((n,i)=>at(i,low));
-  let left=target-out.reduce((s,n)=>s+n,0);
-  const order=caps.map((_,i)=>i).filter(i=>out[i]<caps[i]).sort((a,b)=>weights[b]-weights[a]||a-b);
-  for(const i of order) if(left>0) {out[i]++;left--;}
-  return out;
-}
 function suggestionMetrics(rows,quarters,pair,month=selectedMonth) {
   const includeTrend=[1,4,7,10].includes(Number(month.split('-')[1]));
   const current=quarters[pair.current]||{},previous=quarters[pair.previous]||{};
@@ -55,31 +37,97 @@ function suggestionMetrics(rows,quarters,pair,month=selectedMonth) {
     const spendShare=v.spend!=null&&spendTotal>0?v.spend/spendTotal:null;
     const roi=v.roi==null?null:v.roi/100;
     const trend=old>0&&v.spend!=null?(v.spend-old)/old:null;
-    // ROI leads; a 10-percentage-point share deficit adds 0.02 priority.
+    // Composite ROI controls product totals; role ROI is used only for the split.
     const clamp=n=>Math.max(-1,Math.min(1,n));
-    const score=1+.12*clamp((roi??1)-1)+(includeTrend ? .05*clamp(trend??0) : 0)+.20*clamp((spendShare??share)-share);
-    return {share,spendShare,roi,trend,includeTrend,score};
+    // ROI is the main signal. Absolute spend share now matters independently
+    // of the demand-share gap. Cap outliers, not the difference in unit counts.
+    const roiFactor=Math.pow(Math.min(4,Math.max(0,roi??1)),1.5);
+    const spendFactor=spendShare===null?1:Math.sqrt(Math.min(4,Math.max(0,spendShare*rows.length)));
+    const gapFactor=1+.20*clamp(((spendShare??share)-share)*rows.length);
+    const trendFactor=includeTrend?1+.10*clamp(trend??0):1;
+    const score=roiFactor*spendFactor*gapFactor*trendFactor;
+    const planCrossRoi=v.planCrossRoi==null?null:v.planCrossRoi/100;
+    const directorRoi=v.directorRoi==null?null:v.directorRoi/100;
+    return {share,spendShare,roi,planCrossRoi,directorRoi,trend,includeTrend,score};
   });
   const sum=metrics.reduce((s,m)=>s+m.score,0);
   return metrics.map(m=>({...m,weight:sum?m.score/sum:1/rows.length}));
 }
-function suggestPool(rows,roles,net,metrics) {
-  const quantities=rows.map(r=>roles.reduce((s,k)=>s+r[k],0));
-  const all=quantities.reduce((s,n)=>s+n,0);
-  const delta=quantities.map(()=>0);
-  if(net>0) {
-    const adds=spreadSuggestionUnits(net,metrics.map(m=>m.weight),
-      quantities.map(n=>roles.length*suggestionRoleLimit-n),roles.includes('plan')?2:1);
-    adds.forEach((n,i)=>delta[i]=n);
-  } else if(net<0) {
-    const cuts=spreadSuggestionUnits(Math.min(-net,all),metrics.map(m=>1/Math.max(.001,m.weight)),quantities,roles.includes('plan')?2:1);
-    delta.forEach((_,i)=>delta[i]=-cuts[i]);
+// Project preferred integer allocations onto exact totals and per-product limits.
+function balanceSuggestionAmounts(preferred,lower,upper,target) {
+  if(target<lower.reduce((a,b)=>a+b,0)||target>upper.reduce((a,b)=>a+b,0))
+    throw new Error('调量目标超过岗位可调整范围，请检查目标。');
+  let lo=Math.min(...lower.map((v,i)=>v-preferred[i]))-1;
+  let hi=Math.max(...upper.map((v,i)=>v-preferred[i]))+1;
+  const value=(i,shift)=>Math.max(lower[i],Math.min(upper[i],preferred[i]+shift));
+  for(let step=0;step<80;step++) {
+    const mid=(lo+hi)/2;
+    if(preferred.reduce((sum,_,i)=>sum+value(i,mid),0)<target)lo=mid;else hi=mid;
   }
+  const exact=preferred.map((_,i)=>value(i,(lo+hi)/2));
+  const out=exact.map((v,i)=>Math.max(lower[i],Math.min(upper[i],Math.floor(v))));
+  let left=target-out.reduce((a,b)=>a+b,0);
+  const order=out.map((_,i)=>i).sort((a,b)=>(exact[b]-out[b])-(exact[a]-out[a])||a-b);
+  for(const i of order)if(left>0&&out[i]<upper[i]){out[i]++;left--;}
+  return out;
+}
+function suggestProductPools(rows,pcTarget,dkTarget,metrics,locked={}) {
+  const rolePairs=[['plan','cross'],['director','kol']];
+  const targets=[pcTarget,dkTarget];
+  const bounds=rolePairs.map((roles,pool)=>rows.map(row=>{
+    if(locked[pool])return [0,0];
+    const amount=roles.reduce((sum,k)=>sum+row[k],0),target=targets[pool];
+    return target<0?[-amount,0]:[0,target===0?0:roles.length*suggestionRoleLimit-amount];
+  }));
+  const lower=rows.map((_,i)=>bounds[0][i][0]+bounds[1][i][0]);
+  const upper=rows.map((_,i)=>bounds[0][i][1]+bounds[1][i][1]);
+  const net=pcTarget+dkTarget;
+  const weightSum=metrics.reduce((sum,m)=>sum+m.weight,0);
+  // Start near equal product allocations, then gently tilt by performance.
+  // Smooth +/-30% weights scale with the target rather than imposing a fixed
+  // five-unit gap. Pool totals and available quantities still take precedence.
+  const weights=metrics.map(m=>{
+    const relative=weightSum?m.weight*rows.length/weightSum:1;
+    const performance=Math.tanh(Math.log(Math.max(.000001,relative)));
+    return 1+.30*(net<0?-performance:performance);
+  });
+  const initial=allocateSuggestionUnits(Math.abs(net),weights,net<0?lower.map(v=>-v):upper).map(v=>net<0?-v:v);
+  const totals=balanceSuggestionAmounts(initial,lower,upper,net);
+  const pcLow=i=>Math.max(bounds[0][i][0],totals[i]-bounds[1][i][1]);
+  const pcHigh=i=>Math.min(bounds[0][i][1],totals[i]-bounds[1][i][0]);
+  // Rebalance product totals only when their initial distribution cannot satisfy
+  // the two mandatory pool totals (e.g. one product has no reducible PC volume).
+  for(const direction of [-1,1]) {
+    let gap=direction<0?rows.reduce((s,_,i)=>s+pcLow(i),0)-pcTarget:
+      pcTarget-rows.reduce((s,_,i)=>s+pcHigh(i),0);
+    for(let donor=0;donor<rows.length&&gap>0;donor++) {
+      for(let receiver=0;receiver<rows.length&&gap>0;receiver++) {
+        if(donor===receiver)continue;
+        const available=direction<0?pcLow(donor)-bounds[0][donor][0]:
+          totals[donor]-bounds[0][donor][1]-bounds[1][donor][0];
+        const room=direction<0?bounds[0][receiver][0]+bounds[1][receiver][1]-totals[receiver]:
+          bounds[0][receiver][1]-pcHigh(receiver);
+        const moved=Math.max(0,Math.min(gap,available,room));
+        totals[donor]-=moved;totals[receiver]+=moved;gap-=moved;
+      }
+    }
+  }
+  const preferred=totals.map((amount,i)=>{
+    const m=metrics[i],pc=Math.max(0,m.planCrossRoi??m.roi??1),dk=Math.max(0,m.directorRoi??m.roi??1);
+    const ratio=pc+dk>0?(amount<0?dk:pc)/(pc+dk):.5;
+    return amount*ratio;
+  });
+  const pc=balanceSuggestionAmounts(preferred,rows.map((_,i)=>pcLow(i)),rows.map((_,i)=>pcHigh(i)),pcTarget);
   return rows.map((row,i)=>{
-    const values=roles.map(k=>row[k]);
-    const amounts=allocateSuggestionUnits(Math.abs(delta[i]),values,
-      values.map(n=>delta[i]<0?n:suggestionRoleLimit-n));
-    return Object.fromEntries(roles.map((key,j)=>[key,row[key]+(delta[i]<0?-amounts[j]:amounts[j])]));
+    const result={...row};
+    rolePairs.forEach((roles,pool)=>{
+      const delta=pool===0?pc[i]:totals[i]-pc[i];
+      const values=roles.map(k=>row[k]);
+      const splitWeights=values.some(v=>v>0)?values:[1,0];
+      const amounts=allocateSuggestionUnits(Math.abs(delta),splitWeights,values.map(v=>delta<0?v:suggestionRoleLimit-v));
+      roles.forEach((key,j)=>result[key]+=Math.sign(delta)*amounts[j]);
+    });
+    return result;
   });
 }
 function suggestionFingerprint() {
@@ -95,17 +143,26 @@ function openPlanSuggestions() {
   const remaining={planCross:remainingPlanCross(),directorKol:remainingDirectorKol()};
   const goals={planCross:remaining.planCross??0,directorKol:remaining.directorKol??0};
   const hasChange=Object.values(goals).some(n=>n!==0);
-  const recommend=(roles,key)=>{
-    if(!hasChange||remaining[key]===null) return rows;
-    const starts=rows.map(row=>({...row,...Object.fromEntries(roles.map(k=>[k,base.find(r=>r.product===row.product)[k]]))}));
-    const finalNet=goals[key]+rows.reduce((sum,row,i)=>sum+roles.reduce((v,k)=>v+row[k]-starts[i][k],0),0);
-    return suggestPool(starts,roles,finalNet,metrics);
-  };
-  const pc=recommend(['plan','cross'],'planCross');
-  const dk=recommend(['director','kol'],'directorKol');
+  const starts=rows.map(row=>{
+    const start=base.find(r=>r.product===row.product);
+    return {...row,...(remaining.planCross===null?{}:{plan:start.plan,cross:start.cross}),
+      ...(remaining.directorKol===null?{}:{director:start.director,kol:start.kol})};
+  });
+  const target=(roles,key)=>remaining[key]===null?0:goals[key]+rows.reduce((sum,row,i)=>
+    sum+roles.reduce((v,k)=>v+row[k]-starts[i][k],0),0);
+  let recommended=rows;
+  if(hasChange) {
+    try {
+      recommended=suggestProductPools(starts,target(['plan','cross'],'planCross'),target(['director','kol'],'directorKol'),
+        metrics,{0:remaining.planCross===null,1:remaining.directorKol===null});
+    } catch(error) {
+      cloud.ask({title:'无法生成建议',description:error.message});
+      return;
+    }
+  }
   const draft=rows.map((row,i)=>{
     const start=base.find(r=>r.product===row.product);
-    const final={...row,plan:pc[i].plan,cross:pc[i].cross,director:dk[i].director,kol:dk[i].kol};
+    const final=recommended[i];
     return {product:row.product,...Object.fromEntries(numericKeys.map(k=>[k,final[k]-start[k]]))};
   });
   planSuggestion={month:selectedMonth,rows,base,quarters,pair,metrics,remaining,goals,draft,
@@ -113,6 +170,7 @@ function openPlanSuggestions() {
   cloud.modalOpen=true;
   renderPlanSuggestions();
   document.getElementById('plan-suggestion-dialog').showModal();
+  requestAnimationFrame(syncSuggestionScrollbar);
   document.getElementById('suggestion-cancel').focus();
 }
 function suggestionRows() {
@@ -125,8 +183,12 @@ function suggestionReason(m) {
   const reasons=[];
   if(m.roi===null) reasons.push('未填回报比，按中性效率估算');
   else reasons.push(`产出回报比${m.roi>1?'高':m.roi<1?'偏低':'持平'}（${percent(m.roi*100)}）`);
+  for(const [key,label,roles] of [['planCrossRoi','策跨产出回报比','策划、跨界'],['directorRoi','编导产出回报比','编导、KOL']]) {
+    if(m[key]!=null) reasons.push(`${label}${percent(m[key]*100)}，${roles}${m[key]>1?'优先多增或少减':m[key]<1?'倾向少增或多减':'按中性效率分配'}`);
+  }
   if(m.spendShare===null) reasons.push('日花数据不足，按中性处理');
   else {
+    reasons.push(`当季日花占比${percent(m.spendShare*100)}，参与产品总量分配`);
     const gap=m.spendShare-m.share;
     reasons.push(`需求占比${Math.abs(gap)<1e-9?'等于':gap>0?'低于':'高于'}日花占比`);
   }
@@ -169,6 +231,17 @@ async function exportPlanSuggestion() {
   const status=document.getElementById('suggestion-export-status');
   const month=planSuggestion.month;
   button.disabled=true;status.textContent='正在生成完整截图…';
+  let resolveImage,rejectImage;
+  const imageReady=new Promise((resolve,reject)=>{resolveImage=resolve;rejectImage=reject;});
+  imageReady.catch(()=>{});
+  // Request clipboard access during the click, before asynchronous rendering.
+  let copyResult=Promise.resolve(false);
+  if(window.isSecureContext&&navigator.clipboard?.write&&window.ClipboardItem) {
+    try {
+      copyResult=navigator.clipboard.write([new ClipboardItem({'image/png':imageReady})])
+        .then(()=>true,()=>false);
+    } catch(_) {}
+  }
   try {
     if(!window.html2canvas) {
       if(!suggestionCaptureLibrary) suggestionCaptureLibrary=new Promise((resolve,reject)=>{
@@ -185,9 +258,9 @@ async function exportPlanSuggestion() {
       backgroundColor:'#ffffff',scale:1.5,logging:false,windowWidth:width+80,
       onclone(doc) {
         const dialog=doc.getElementById('plan-suggestion-dialog');
-        Object.assign(dialog.style,{width:width+'px',maxHeight:'none',height:'auto',overflow:'visible',position:'absolute',top:'0',left:'0',margin:'0'});
+        Object.assign(dialog.style,{width:width+'px',maxHeight:'none',height:'auto',overflow:'visible',display:'block',position:'absolute',top:'0',left:'0',margin:'0'});
         const content=doc.getElementById('plan-suggestion-content');
-        Object.assign(content.style,{width:width+'px',boxSizing:'border-box'});
+        Object.assign(content.style,{width:width+'px',boxSizing:'border-box',overflow:'visible',height:'auto',maxHeight:'none',flex:'none'});
         const pair=content.querySelector('.suggestion-pair');
         pair.style.overflow='visible';pair.scrollLeft=0;
         content.querySelectorAll('button,#suggestion-export-status').forEach(el=>el.style.display='none');
@@ -207,11 +280,17 @@ async function exportPlanSuggestion() {
     });
     const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
     if(!blob) throw new Error('无法生成PNG');
-    const url=URL.createObjectURL(blob),link=document.createElement('a');
-    link.href=url;link.download=`${month}-AI建议-${Date.now()}.png`;
-    link.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
-    status.textContent='截图已下载，包含全部表格内容。';
+    resolveImage(blob);
+    if(await copyResult) {
+      status.textContent='完整截图已复制，可在其他软件按 Ctrl+V 粘贴。';
+    } else {
+      const url=URL.createObjectURL(blob),link=document.createElement('a');
+      link.href=url;link.download=`${month}-AI建议-${Date.now()}.png`;
+      link.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
+      status.textContent='未能复制到剪贴板，截图已下载。请允许剪贴板权限后再次点击“全屏截图”。';
+    }
   } catch(error) {
+    rejectImage(error);
     status.textContent='截图失败，请再次点击“全屏截图”重试。';
   } finally {button.disabled=false;}
 }
@@ -223,6 +302,8 @@ function renderPlanSuggestions() {
     const code=row.product,v=cur[code]||{},old=prior[code]?.spend??null,m=s.metrics[i];
     return `<tr data-suggestion-index="${i}"><th>${productName(code)}</th><td>${money(old)}</td><td>${money(v.spend)}</td>
       <td>${productBar(percent(v.roi??null),v.roi??null,'roi')}</td>
+      <td data-suggest-role-roi>${productBar(percent(v.planCrossRoi??null),v.planCrossRoi??null,'roi')}</td>
+      <td data-suggest-role-roi>${productBar(percent(v.directorRoi??null),v.directorRoi??null,'roi')}</td>
       <td>${productBar(percent(m.spendShare===null?null:m.spendShare*100),m.spendShare===null?null:m.spendShare*100)}</td>
       <td>${productBar(old===0&&v.spend>0?'新增':percent(m.trend===null?null:m.trend*100),m.trend===null?null:m.trend*100,'change')}</td></tr>`;
   }).join('');
@@ -242,15 +323,28 @@ function renderPlanSuggestions() {
     <p class="suggestion-explanation">岗位输入框为相对计划起点的最终增减，应用后替换旧值，不叠加。图片保持不变；日花、回报比仅供参考，不在此修改。</p>
     ${warnings.length?`<p class="suggestion-warning">${warnings.join(' ')}</p>`:''}
     <div id="suggestion-summary" class="suggestion-summary" aria-live="polite"></div>
-    <details class="suggestion-rules"><summary>建议如何计算</summary><p>先分散增减量，再综合回报比、需求占比与当季日花占比的差距分配。${s.metrics[0]?.includeTrend?'当前为季度首月，日花相较上季度的变化也参与计算。':'当前不是季度首月，日花变化不参与本次计算。'}回报比优先；需求占比低于日花占比时支持多增或少减，高于时支持少增或多减，但不强制两种占比一致。条件允许时两类岗位合计差距控制在约5条以内。总目标不变，不额外制造反向增减。可减量不足、图片或未设目标岗位已有调整时，差距可能扩大。调整说明仅展示生成建议时的判断依据，具体增减以输入值为准。手动修改不受此差距限制，但总量仍需匹配。这是本地规则计算，不是模型推理。</p></details>
+    <details class="suggestion-rules"><summary>建议如何计算</summary><p>产品总量以均衡分配为基础，再按综合产出回报比、当季日花占比适度多给或少给，需求占比与日花占比的差距辅助判断。产品分配权重围绕均衡基础平滑上下调整约30%，不是把条数直接按回报比分摊，也不是固定相差5条；总目标较小或可减量不足时可以有产品不调整。岗位内部更明显地参考策跨、编导产出回报比：增加时优先高回报岗位，减少时优先低回报岗位。只严格约束策跨、编导KOL两个合计；策划与跨界、编导与KOL按计划起点的岗位数量比例拆分，因此原有量较少的KOL、跨界通常少增，主要增到编导、策划。两岗位原有量均为0时，默认先给编导或策划。未填写的岗位回报比沿用综合回报比，均未填写按中性处理。最后在产品之间协调，严格满足两个总调量目标；岗位可减量不足时允许调整产品总量和岗位比例，不会减成负数。两类目标方向相反时允许对应岗位一增一减。${s.metrics[0]?.includeTrend?'当前为季度首月，日花相较上季度的变化也参与计算。':'当前不是季度首月，日花变化不参与本次计算。'}图片和未设目标岗位保持不变。输入框是相对计划起点的最终调整，应用覆盖旧值，不累计。手动修改后也必须满足总目标才能应用。这是本地规则计算，不是模型推理。</p></details>
     <div class="suggestion-table-actions"><button class="btn" data-suggest-toggle-roles aria-expanded="true">收起岗位增减</button></div>
     <div class="pd-pair suggestion-pair">
-      <div class="pd-table"><table><thead><tr><th>产品</th><th>${pair.previousLabel}日花</th><th>${pair.currentLabel}日花</th>${suggestionSortHeading('产出回报比','roi')}${suggestionSortHeading(pair.currentLabel+'日花占比','spendShare')}${suggestionSortHeading('日花变化','trend')}</tr></thead>
-        <tbody>${econ}</tbody><tfoot><tr><th>合计</th><td>${money(oldTotal)}</td><td>${money(spendTotal)}</td><td>—</td><td>${spendTotal?'100%':'—'}</td><td>${percent(oldTotal>0?(spendTotal-oldTotal)/oldTotal*100:null)}</td></tr></tfoot></table></div>
+      <div class="pd-table"><table><thead><tr><th>产品</th><th>${pair.previousLabel}日花</th><th>${pair.currentLabel}日花</th>${suggestionSortHeading('产出回报比','roi')}${suggestionSortHeading('策跨产出回报比','planCrossRoi')}${suggestionSortHeading('编导产出回报比','directorRoi')}${suggestionSortHeading(pair.currentLabel+'日花占比','spendShare')}${suggestionSortHeading('日花变化','trend')}</tr></thead>
+        <tbody>${econ}</tbody><tfoot><tr><th>合计</th><td>${money(oldTotal)}</td><td>${money(spendTotal)}</td><td>—</td><td data-suggest-role-roi>—</td><td data-suggest-role-roi>—</td><td>${spendTotal?'100%':'—'}</td><td>${percent(oldTotal>0?(spendTotal-oldTotal)/oldTotal*100:null)}</td></tr></tfoot></table></div>
       <div class="pd-table suggestion-planning"><table><thead><tr><th>产品</th><th>调整说明</th><th>计划量</th><th>需求量占比</th><th>需求量变化</th>${numericKeys.map(k=>`<th data-suggest-role-cell>${k==='image'?'图片（保留）':roleLabels[k]+'增减'}</th>`).join('')}</tr></thead>
         <tbody>${planning}</tbody><tfoot id="suggestion-foot"></tfoot></table></div>
     </div>`;
   updatePlanSuggestionPreview();
+  document.querySelectorAll('[data-suggest-sort="planCrossRoi"],[data-suggest-sort="directorRoi"]').forEach(el=>el.closest('th').setAttribute('data-suggest-role-roi',''));
+  const pairElement=document.querySelector('.suggestion-pair');
+  pairElement.onscroll=()=>{
+    document.getElementById('suggestion-scrollbar').scrollLeft=pairElement.scrollLeft;
+  };
+  syncSuggestionScrollbar();
+}
+function syncSuggestionScrollbar() {
+  const pair=document.querySelector('.suggestion-pair'),bar=document.getElementById('suggestion-scrollbar');
+  if(!pair||!bar)return;
+  bar.hidden=pair.scrollWidth<=pair.clientWidth;
+  bar.firstElementChild.style.width=Math.max(0,pair.scrollWidth+bar.clientWidth-pair.clientWidth)+'px';
+  bar.scrollLeft=pair.scrollLeft;
 }
 function updatePlanSuggestionPreview() {
   const s=planSuggestion,rows=suggestionRows(),all=rows.reduce((sum,r)=>sum+total(r),0);
@@ -315,7 +409,8 @@ function setupPlanSuggestions() {
   style.textContent=`
     #plan-suggestion-dialog{width:min(1660px,calc(100vw - 32px));max-width:none;max-height:92vh;box-sizing:border-box;padding:0;border:0;border-radius:18px;box-shadow:0 24px 80px #13254040;color:var(--text);background:#fff}
     #plan-suggestion-dialog::backdrop{background:#15243e66}
-    #plan-suggestion-content{padding:24px}
+    #plan-suggestion-dialog[open]{display:flex;flex-direction:column;overflow:hidden}
+    #plan-suggestion-content{padding:24px;min-height:0;overflow-y:auto;flex:1 1 auto}
     .suggestion-heading{display:flex;justify-content:space-between;align-items:center;gap:16px}
     .suggestion-heading h2{margin:0;font-size:21px}.suggestion-heading p{margin:8px 0 0;color:var(--muted);font-size:14px}
     .suggestion-heading h2 .btn{margin-left:12px;vertical-align:middle;font-size:13px;font-weight:400}
@@ -338,21 +433,33 @@ function setupPlanSuggestions() {
     #plan-suggestion-dialog input:invalid{border-color:#d06565}
     #plan-suggestion-dialog .pd-table{border:0}
     .suggestion-table-actions{display:flex;justify-content:flex-end;margin:0 0 12px}
-    .suggestion-pair{grid-template-columns:minmax(760px,1fr) minmax(1370px,1.7fr)}
+    .suggestion-pair{grid-template-columns:minmax(1120px,1fr) minmax(1370px,1.7fr)}
     .suggestion-pair.suggestion-collapsed{grid-template-columns:minmax(760px,1fr) minmax(760px,1fr)}
     #plan-suggestion-dialog .suggestion-planning tr>:first-child{width:80px}
     #plan-suggestion-dialog .suggestion-planning tr>:nth-child(2){width:260px}
     #plan-suggestion-dialog .suggestion-inline-reason{white-space:normal;text-align:left;font-size:12px;line-height:1.6;color:var(--muted)}
     .suggestion-inline-reason small{display:block;color:#8c691f}
-    .suggestion-footer{position:sticky;bottom:0;display:flex;align-items:center;justify-content:flex-end;gap:12px;padding:16px 24px;border-top:1px solid var(--line);background:white}
+    .suggestion-footer{flex:0 0 auto;padding:12px 24px 16px;border-top:1px solid var(--line);background:white}
+    .suggestion-footer-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px}
+    #suggestion-scrollbar{width:100%;height:12px;margin-bottom:10px;overflow-x:scroll;overflow-y:hidden}
+    #suggestion-scrollbar>div{height:1px}
+    #plan-suggestion-content,#suggestion-scrollbar{scrollbar-width:thin;scrollbar-color:#b2b2b2 #f5f5f5}
+    #plan-suggestion-content::-webkit-scrollbar,#suggestion-scrollbar::-webkit-scrollbar{width:8px;height:8px}
+    #plan-suggestion-content::-webkit-scrollbar-track,#suggestion-scrollbar::-webkit-scrollbar-track{background:#f5f5f5}
+    #plan-suggestion-content::-webkit-scrollbar-thumb,#suggestion-scrollbar::-webkit-scrollbar-thumb{background:#b2b2b2;border-radius:4px}
     #suggestion-validation{margin-right:auto;font-size:13px;line-height:1.5}
-    @media(max-width:700px){#plan-suggestion-content{padding:16px}.suggestion-summary{grid-template-columns:1fr}.suggestion-footer{padding:12px 16px;flex-wrap:wrap}#suggestion-validation{width:100%}.suggestion-heading h2{font-size:18px}.suggestion-tag{margin-left:0}}
+    @media(max-width:700px){#plan-suggestion-content{padding:16px}.suggestion-summary{grid-template-columns:1fr}.suggestion-footer{padding:12px 16px}.suggestion-footer-actions{flex-wrap:wrap}#suggestion-validation{width:100%}.suggestion-heading h2{font-size:18px}.suggestion-tag{margin-left:0}}
   `;
   document.head.appendChild(style);
   const dialog=document.createElement('dialog');
   dialog.id='plan-suggestion-dialog';dialog.setAttribute('aria-labelledby','plan-suggestion-title');
-  dialog.innerHTML='<div id="plan-suggestion-content"></div><div class="suggestion-footer"><span id="suggestion-validation" role="status"></span><button class="btn" id="suggestion-cancel">取消</button><button class="btn primary" id="suggestion-apply">应用</button></div>';
+  dialog.innerHTML='<div id="plan-suggestion-content"></div><div class="suggestion-footer"><div id="suggestion-scrollbar" tabindex="0" role="region" aria-label="左右滚动建议表格"><div></div></div><div class="suggestion-footer-actions"><span id="suggestion-validation" role="status"></span><button class="btn" id="suggestion-cancel">取消</button><button class="btn primary" id="suggestion-apply">应用</button></div></div>';
   document.body.appendChild(dialog);
+  document.getElementById('suggestion-scrollbar').onscroll=e=>{
+    const pair=dialog.querySelector('.suggestion-pair');
+    if(pair)pair.scrollLeft=e.target.scrollLeft;
+  };
+  new ResizeObserver(syncSuggestionScrollbar).observe(dialog);
   dialog.addEventListener('cancel',e=>{e.preventDefault();closePlanSuggestions();});
   dialog.addEventListener('click',e=>{
     const sort=e.target.closest('[data-suggest-sort]');
@@ -364,10 +471,11 @@ function setupPlanSuggestions() {
       if(!s.rolesCollapsed) s.expandedScroll=pair.scrollLeft;
       s.rolesCollapsed=!s.rolesCollapsed;
       pair.classList.toggle('suggestion-collapsed',s.rolesCollapsed);
-      dialog.querySelectorAll('[data-suggest-role-cell]').forEach(el=>el.hidden=s.rolesCollapsed);
+      dialog.querySelectorAll('[data-suggest-role-cell],[data-suggest-role-roi]').forEach(el=>el.hidden=s.rolesCollapsed);
       toggle.textContent=s.rolesCollapsed?'展开岗位增减':'收起岗位增减';
       toggle.setAttribute('aria-expanded',String(!s.rolesCollapsed));
       if(!s.rolesCollapsed) pair.scrollLeft=s.expandedScroll||0;
+      syncSuggestionScrollbar();
     }
     if(e.target.closest('#suggestion-cancel')) closePlanSuggestions();
     if(e.target.closest('#suggestion-apply')) applyPlanSuggestions();

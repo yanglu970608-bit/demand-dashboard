@@ -49,6 +49,8 @@ function updatePlanDelta(row,key) {
 }
 const planSortOptions=[
   ['default','默认产品顺序'],['roi-asc','回报比：低 → 高'],['roi-desc','回报比：高 → 低'],
+  ['planCrossRoi-asc','策跨回报比：低 → 高'],['planCrossRoi-desc','策跨回报比：高 → 低'],
+  ['directorRoi-asc','编导回报比：低 → 高'],['directorRoi-desc','编导回报比：高 → 低'],
   ['spend-desc','日花：高 → 低'],['spend-asc','日花：低 → 高'],
   ['change-asc','日花变化：低 → 高'],['change-desc','日花变化：高 → 低']
 ];
@@ -135,7 +137,7 @@ function renderProductDemand() {
     {name:'SLOTS',rows:orderedProducts(proposedRows()),slots:true},
     {name:'非SLOTS',rows:orderedProducts(proposedNonSlots()),slots:false}
   ];
-  const input=(code,field,value)=>`<input ${field==='spend'?'type="text" inputmode="decimal"':'type="number" min="0" max="10000000" step="0.1"'} data-economics="${code}" data-field="${field}" value="${value==null?'':field==='spend'?Number(value).toLocaleString('en-US',{maximumFractionDigits:2}):Math.round(value)}" placeholder="未填写" aria-label="${productName(code)} ${field==='roi'?'产出回报比':'日花'}">`;
+  const input=(code,field,value)=>`<input ${field==='spend'?'type="text" inputmode="decimal"':'type="number" min="0" max="10000000" step="0.1"'} data-economics="${code}" data-field="${field}" value="${value==null?'':field==='spend'?Number(value).toLocaleString('en-US',{maximumFractionDigits:2}):Math.round(value)}" placeholder="未填写" aria-label="${productName(code)} ${{roi:'产出回报比',planCrossRoi:'策跨产出回报比',directorRoi:'编导产出回报比',spend:'日花'}[field]}">`;
   document.getElementById('product-view').innerHTML=renderPlanTargets()+groupsOfProducts.map(group=>{
     const spendTotal=productEconomicsTotals(group.rows.map(r=>r.product));
     const oldSpend=group.rows.reduce((s,r)=>s+(Number(priorQuarter[r.product]?.spend)||0),0);
@@ -150,7 +152,7 @@ function renderProductDemand() {
       const c=r.product,v=quarter[c]||{},old=priorQuarter[c]?.spend??null;
       const change=old>0&&v.spend!==null&&v.spend!==undefined?(v.spend-old)/old*100:null;
       return `<tr><th>${productName(c)}</th><td>${money(old)}</td><td>${input(c,'spend',v.spend)}</td>
-        <td>${input(c,'roi',v.roi)}<span class="pd-unit">%</span><div class="pd-track"><i style="width:${Math.min(100,Math.max(0,v.roi||0))}%;background:#aeb9f5"></i></div></td>
+        ${(planRolesCollapsed?['roi']:['roi','planCrossRoi','directorRoi']).map(field=>`<td>${input(c,field,v[field])}<span class="pd-unit">%</span><div class="pd-track"><i style="width:${Math.min(100,Math.max(0,v[field]||0))}%;background:#aeb9f5"></i></div></td>`).join('')}
         <td>${productBar(percent(v.spend==null?null:portion(v.spend,spendTotal)),v.spend==null?null:portion(v.spend,spendTotal))}</td>
         <td>${productBar(old===0&&v.spend>0?'新增':percent(change),change,'change')}</td></tr>`;
     }).join('');
@@ -164,9 +166,9 @@ function renderProductDemand() {
         <td>${productBar(delta===null?'—':`${delta>0?'+':''}${delta}`,delta===null?null:delta/maxDelta*100,'demand')}</td>
         ${group.slots&&!planRolesCollapsed?numericKeys.map(k=>`<td><input type="number" step="1" min="${-base[k]}" max="${10000000-base[k]}" data-plan-product="${r.product}" data-plan-role="${k}" value="${planAdjustments()[r.product]?.[k]??''}" aria-label="${productName(r.product)} ${roleLabels[k]}增减"></td>`).join(''):''}</tr>`;
     }).join('');
-    return `<section class="panel pd-section ${group.slots?'':'pd-nonslots'}"><div class="pd-heading"><h2>${group.name}产品需求量</h2>${group.slots?`<div class="pd-actions"><button class="btn" data-toggle-roles aria-expanded="${!planRolesCollapsed}">${planRolesCollapsed?'展开':'收起'}岗位增减</button><button class="btn primary" data-ai-suggest>AI建议</button></div>`:''}</div><div class="pd-pair">
-      <div class="pd-table"><table><thead><tr><th>产品</th><th title="${pair.previous}">${pair.previousLabel}日花</th><th title="${pair.current}">${pair.currentLabel}日花</th>${sortHeading('产出回报比','roi')}${sortHeading(`${pair.currentLabel}日花占比`,'spend')}${sortHeading('日花变化','change')}</tr></thead><tbody>${economicsRows}</tbody>
-      <tfoot><tr><th>合计</th><td>${money(oldSpend)}</td><td>${money(spendTotal)}</td><td>—</td><td>${percent(portion(spendTotal,spendTotal))}</td><td>${percent(oldSpend>0?(spendTotal-oldSpend)/oldSpend*100:null)}</td></tr></tfoot></table></div>
+    return `<section class="panel pd-section ${group.slots?'':'pd-nonslots'}"><div class="pd-heading"><h2>${group.name}产品需求量</h2>${group.slots?`<div class="pd-actions"><button class="btn" data-toggle-roles aria-expanded="${!planRolesCollapsed}">${planRolesCollapsed?'展开':'收起'}岗位增减</button><button class="btn primary" data-ai-suggest>AI建议</button></div>`:''}</div><div class="pd-pair ${planRolesCollapsed?'pd-roles-collapsed':''}">
+      <div class="pd-table"><table><thead><tr><th>产品</th><th title="${pair.previous}">${pair.previousLabel}日花</th><th title="${pair.current}">${pair.currentLabel}日花</th>${sortHeading('产出回报比','roi')}${planRolesCollapsed?'':sortHeading('策跨产出回报比','planCrossRoi')+sortHeading('编导产出回报比','directorRoi')}${sortHeading(`${pair.currentLabel}日花占比`,'spend')}${sortHeading('日花变化','change')}</tr></thead><tbody>${economicsRows}</tbody>
+      <tfoot><tr><th>合计</th><td>${money(oldSpend)}</td><td>${money(spendTotal)}</td><td>—</td>${planRolesCollapsed?'':'<td>—</td><td>—</td>'}<td>${percent(portion(spendTotal,spendTotal))}</td><td>${percent(oldSpend>0?(spendTotal-oldSpend)/oldSpend*100:null)}</td></tr></tfoot></table></div>
       <div class="pd-table pd-planning ${group.slots&&!planRolesCollapsed?'':'pd-compact'}"><table><thead><tr><th>产品</th><th>计划量</th><th>需求量占比</th><th>需求量变化</th>${roleHeads}</tr></thead><tbody>${planningRows}</tbody><tfoot><tr><th>合计</th><td>${countTotal}</td><td>${percent(portion(countTotal,countTotal))}</td><td>${combined===null?'—':combined}</td>${group.slots&&!planRolesCollapsed?numericKeys.map(k=>`<td>${group.rows.reduce((s,r)=>s+(Number(planAdjustments()[r.product]?.[k])||0),0)}</td>`).join(''):''}</tr></tfoot></table></div>
       </div></section>`;
   }).join('');
@@ -185,10 +187,11 @@ function setupProductDemand() {
   const style=document.createElement('style');
   style.textContent=`
     .shell:has(#product-view:not([hidden])){max-width:1740px}
-    .pd-pair{display:grid;grid-template-columns:minmax(760px,1fr) minmax(1080px,1.4fr);gap:24px;align-items:start;overflow-x:auto;padding-bottom:10px}
+    .pd-pair{display:grid;grid-template-columns:minmax(1120px,1fr) minmax(1080px,1.4fr);gap:24px;align-items:start;overflow-x:auto;padding-bottom:10px}
     .pd-pair{scrollbar-width:thin;scrollbar-color:#a8b5c8 #edf1f6}
     .pd-pair::-webkit-scrollbar{height:10px}.pd-pair::-webkit-scrollbar-track{background:#edf1f6;border-radius:6px}.pd-pair::-webkit-scrollbar-thumb{background:#a8b5c8;border-radius:6px}
-    .pd-pair:has(.pd-compact){grid-template-columns:minmax(760px,1fr) minmax(600px,1fr)}
+    .pd-pair:has(.pd-compact){grid-template-columns:minmax(1120px,1fr) minmax(600px,1fr)}
+    .pd-pair.pd-roles-collapsed{grid-template-columns:minmax(760px,1fr) minmax(600px,1fr)}
     .pd-section h2{margin:0 0 18px;font-size:18px}.pd-table{overflow:hidden;border:1px solid var(--line);border-radius:12px}
     .pd-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}.pd-heading h2{margin:0}
     .pd-targets{display:flex;justify-content:space-evenly;align-items:center;gap:24px;flex-wrap:wrap;margin-bottom:18px;text-align:center}.pd-targets label{display:flex;align-items:center;justify-content:center;gap:8px}.pd-targets .hint{margin-top:8px}
