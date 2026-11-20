@@ -309,10 +309,10 @@ function renderPlanSuggestions() {
   }).join('');
   const planning=s.draft.map((row,i)=>{
     const base=s.base.find(r=>r.product===row.product);
-    return `<tr data-suggestion-index="${i}"><th>${productName(row.product)}</th><td class="suggestion-inline-reason"><span data-suggest-reason="${i}"></span><small data-suggest-edited="${i}"></small></td><td data-suggest-total="${i}"></td>
+    return `<tr data-suggestion-index="${i}"><th>${productName(row.product)}</th><td data-suggest-total="${i}"></td>
       <td data-suggest-share="${i}"></td><td data-suggest-change="${i}"></td>
       ${numericKeys.map(k=>`<td data-suggest-role-cell>${k==='image'?`<span title="图片不参与自动调整">${row[k]}</span>`:
-        `<input type="number" step="1" min="${-base[k]}" max="${suggestionRoleLimit-base[k]}" value="${row[k]}" data-suggest-row="${i}" data-suggest-role="${k}" aria-label="${productName(row.product)} ${roleLabels[k]}建议增减">`}</td>`).join('')}</tr>`;
+        `<input type="number" step="1" min="${-base[k]}" max="${suggestionRoleLimit-base[k]}" value="${row[k]}" data-suggest-row="${i}" data-suggest-role="${k}" aria-label="${productName(row.product)} ${roleLabels[k]}建议增减">`}</td>`).join('')}<td class="suggestion-inline-reason"><span data-suggest-reason="${i}"></span><small data-suggest-edited="${i}"></small></td></tr>`;
   }).join('');
   const warnings=[];
   if(s.remaining.planCross===null) warnings.push('缺少有效制作时间：策跨暂保持当前数量。');
@@ -328,7 +328,7 @@ function renderPlanSuggestions() {
     <div class="pd-pair suggestion-pair">
       <div class="pd-table"><table><thead><tr><th>产品</th><th>${pair.previousLabel}日花</th><th>${pair.currentLabel}日花</th>${suggestionSortHeading('产出回报比','roi')}${suggestionSortHeading('策跨产出回报比','planCrossRoi')}${suggestionSortHeading('编导产出回报比','directorRoi')}${suggestionSortHeading(pair.currentLabel+'日花占比','spendShare')}${suggestionSortHeading('日花变化','trend')}</tr></thead>
         <tbody>${econ}</tbody><tfoot><tr><th>合计</th><td>${money(oldTotal)}</td><td>${money(spendTotal)}</td><td>—</td><td data-suggest-role-roi>—</td><td data-suggest-role-roi>—</td><td>${spendTotal?'100%':'—'}</td><td>${percent(oldTotal>0?(spendTotal-oldTotal)/oldTotal*100:null)}</td></tr></tfoot></table></div>
-      <div class="pd-table suggestion-planning"><table><thead><tr><th>产品</th><th>调整说明</th><th>计划量</th><th>需求量占比</th><th>需求量变化</th>${numericKeys.map(k=>`<th data-suggest-role-cell>${k==='image'?'图片（保留）':roleLabels[k]+'增减'}</th>`).join('')}</tr></thead>
+      <div class="pd-table suggestion-planning"><table><thead><tr><th>产品</th><th>计划量</th><th>需求量占比</th><th>需求量变化</th>${numericKeys.map(k=>`<th data-suggest-role-cell>${k==='image'?'图片（保留）':roleLabels[k]+'增减'}</th>`).join('')}<th>调整说明</th></tr></thead>
         <tbody>${planning}</tbody><tfoot id="suggestion-foot"></tfoot></table></div>
     </div>`;
   updatePlanSuggestionPreview();
@@ -360,7 +360,7 @@ function updatePlanSuggestionPreview() {
     root.querySelector(`[data-suggest-reason="${i}"]`).textContent=showReason?suggestionReason(s.metrics[i]):'';
     root.querySelector(`[data-suggest-edited="${i}"]`).textContent=showReason&&s.edited.has(i)?'已手动修改':'';
   });
-  document.getElementById('suggestion-foot').innerHTML=`<tr><th>合计</th><td></td><td>${all}</td><td>${all?'100%':'—'}</td><td>${signed(deltas.reduce((sum,n)=>sum+n,0))}</td>${numericKeys.map(k=>`<td data-suggest-role-cell ${s.rolesCollapsed?'hidden':''}>${signed(s.draft.reduce((sum,r)=>sum+r[k],0))}</td>`).join('')}</tr>`;
+  document.getElementById('suggestion-foot').innerHTML=`<tr><th>合计</th><td>${all}</td><td>${all?'100%':'—'}</td><td>${signed(deltas.reduce((sum,n)=>sum+n,0))}</td>${numericKeys.map(k=>`<td data-suggest-role-cell ${s.rolesCollapsed?'hidden':''}>${signed(s.draft.reduce((sum,r)=>sum+r[k],0))}</td>`).join('')}<td></td></tr>`;
   let exact=true;
   document.getElementById('suggestion-summary').innerHTML=[
     ['planCross','策划＋跨界',['plan','cross']],['directorKol','编导＋KOL',['director','kol']]
@@ -436,7 +436,7 @@ function setupPlanSuggestions() {
     .suggestion-pair{grid-template-columns:minmax(1120px,1fr) minmax(1370px,1.7fr)}
     .suggestion-pair.suggestion-collapsed{grid-template-columns:minmax(760px,1fr) minmax(760px,1fr)}
     #plan-suggestion-dialog .suggestion-planning tr>:first-child{width:80px}
-    #plan-suggestion-dialog .suggestion-planning tr>:nth-child(2){width:260px}
+    #plan-suggestion-dialog .suggestion-planning tr>:last-child{width:260px}
     #plan-suggestion-dialog .suggestion-inline-reason{white-space:normal;text-align:left;font-size:12px;line-height:1.6;color:var(--muted)}
     .suggestion-inline-reason small{display:block;color:#8c691f}
     .suggestion-footer{flex:0 0 auto;padding:12px 24px 16px;border-top:1px solid var(--line);background:white}
