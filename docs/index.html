@@ -570,7 +570,8 @@
       if(before===undefined || before===null) return null;
       const current=key==='total'?total(row):row[key];
       if(compareMode==='month') return current-before;
-      return weeklyQuantity(current-before);
+      const currentWeek=weeklyQuantity(current), priorWeek=weeklyQuantity(before,previousMonth(selectedMonth));
+      return currentWeek===null || priorWeek===null ? null : currentWeek-priorWeek;
     }
     function changeText(value) {
       if(value===null) return compareMode==='week'?'暂无可比周量':'无上月明细';
@@ -700,7 +701,7 @@
     function renderEditor() {
       const note=document.getElementById('week-note');
       note.hidden=compareMode!=='week';
-      note.textContent=`本月按 ${period().weeks} 周计算。每周量＝本月总量÷本月工作周数；每周增减＝（本月总量－上月总量）÷本月工作周数。`;
+      note.textContent=`本月按 ${period().weeks} 周计算；上月按 ${period(previousMonth(selectedMonth)).weeks} 周计算。每周增减＝本月总量÷本月工作周数－上月总量÷上月工作周数。`;
       const keys=visibleRoleKeys();
       document.getElementById('editor-head').innerHTML='<tr>'+['产品','总量',...keys.map(k=>roleLabels[k])].map(n=>`<th scope="col">${n}</th>`).join('')+'</tr>';
       const editor = document.getElementById('editor-body');
