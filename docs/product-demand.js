@@ -14,6 +14,20 @@ function applyLocalQuarterInputs() {
   // Local-only data entry is intentionally excluded from the public deployment.
 }
 function productName(code) {return code==='CB'?'CC':code;}
+// Spend remains quarterly. Monthly ROI overrides never modify legacy quarter
+// values, so older months/archives retain their previous display.
+function economicsForMonth(month=selectedMonth) {
+  const quarters=economics(),q=quarterPair(new Date(`${month}-01T12:00:00`)).current;
+  const legacy=quarters[q]||{},monthly=store.productEconomics.monthlyRoi?.[month]||{};
+  const current={};
+  for(const code of new Set([...Object.keys(legacy),...Object.keys(monthly)])) {
+    current[code]={...legacy[code]};
+    for(const field of ['roi','planCrossRoi','directorRoi']) {
+      if(Object.prototype.hasOwnProperty.call(monthly[code]||{},field))current[code][field]=monthly[code][field];
+    }
+  }
+  return {...quarters,[q]:current};
+}
 function money(value) {return value===null||value===undefined?'—':'$'+Number(value).toLocaleString('en-US',{maximumFractionDigits:2});}
 function percent(value) {return value===null?'—':`${Math.sign(value)*Math.round(Math.abs(value))}%`;}
 function portion(value,total) {return total>0?value/total*100:null;}
@@ -57,7 +71,7 @@ const planSortOptions=[
 function orderedProducts(rows) {
   const mode=store.planSort?.[selectedMonth]||'default';
   if(!planSortOptions.some(([key])=>key===mode)||mode==='default') return [...rows];
-  const [field,direction]=mode.split('-'),pair=quarterPair(),quarters=economics();
+  const [field,direction]=mode.split('-'),pair=quarterPair(),quarters=economicsForMonth();
   const value=row=>{
     const entry=quarters[pair.current]?.[row.product];
     if(field!=='change') return entry?.[field]??null;
@@ -131,7 +145,7 @@ function renderProductDemand() {
   const offsets=[...root.querySelectorAll('.pd-pair')].map(el=>el.scrollLeft);
   const active=root.contains(document.activeElement)?document.activeElement:null;
   const focused=active?.matches('input[data-plan-role],input[data-plan-target]')?{attributes:[...active.attributes].filter(a=>a.name.startsWith('data-')),captured:active.dataset.undoCaptured}:null;
-  const pair=quarterPair(),quarter=economics()[pair.current]||{},priorQuarter=economics()[pair.previous]||{};
+  const pair=quarterPair(),quarter=economicsForMonth()[pair.current]||{},priorQuarter=economics()[pair.previous]||{};
   const prev=store.months[previousMonth(selectedMonth)];
   const groupsOfProducts=[
     {name:'SLOTS',rows:orderedProducts(proposedRows()),slots:true},
@@ -298,9 +312,15 @@ function setupProductDemand() {
     if(!el.checkValidity()) {el.reportValidity();renderProductDemand();return;}
     if(el.dataset.economics) {
       rememberUndo();
-      const q=quarterPair().current,quarters=economics();
-      quarters[q]??={};quarters[q][el.dataset.economics]??={spend:null,roi:null};
-      quarters[q][el.dataset.economics][el.dataset.field]=raw===''?null:Number(raw);
+      const q=quarterPair().current,quarters=economics(),code=el.dataset.economics,field=el.dataset.field;
+      if(field==='spend') {
+        quarters[q]??={};quarters[q][code]??={};
+        quarters[q][code].spend=raw===''?null:Number(raw);
+      } else if(['roi','planCrossRoi','directorRoi'].includes(field)) {
+        const monthly=store.productEconomics.monthlyRoi??={};
+        monthly[selectedMonth]??={};monthly[selectedMonth][code]??={};
+        monthly[selectedMonth][code][field]=raw===''?null:Number(raw);
+      }
     } else return;
     render();saveMonths();
   });

@@ -138,7 +138,7 @@ function openPlanSuggestions() {
   if(!cloud.ready||cloud.conflict||cloud.modalOpen||cloud.actionPending) return;
   ensurePlanBase();
   const rows=structuredClone(orderedProducts(data)),base=structuredClone(planBaseRows());
-  const quarters=structuredClone(economics()),pair=quarterPair();
+  const quarters=structuredClone(economicsForMonth()),pair=quarterPair();
   const metrics=suggestionMetrics(rows,quarters,pair);
   const remaining={planCross:remainingPlanCross(),directorKol:remainingDirectorKol()};
   const goals={planCross:remaining.planCross??0,directorKol:remaining.directorKol??0};
