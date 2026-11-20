@@ -142,7 +142,6 @@ function openPlanSuggestions() {
   const metrics=suggestionMetrics(rows,quarters,pair);
   const remaining={planCross:remainingPlanCross(),directorKol:remainingDirectorKol()};
   const goals={planCross:remaining.planCross??0,directorKol:remaining.directorKol??0};
-  const hasChange=Object.values(goals).some(n=>n!==0);
   const starts=rows.map(row=>{
     const start=base.find(r=>r.product===row.product);
     return {...row,...(remaining.planCross===null?{}:{plan:start.plan,cross:start.cross}),
@@ -151,7 +150,9 @@ function openPlanSuggestions() {
   const target=(roles,key)=>remaining[key]===null?0:goals[key]+rows.reduce((sum,row,i)=>
     sum+roles.reduce((v,k)=>v+row[k]-starts[i][k],0),0);
   let recommended=rows;
-  if(hasChange) {
+  // Reallocate the full baseline-relative target even when nothing remains.
+  // Preview stays isolated; only Apply writes the replacement adjustments.
+  if(remaining.planCross!==null||remaining.directorKol!==null) {
     try {
       recommended=suggestProductPools(starts,target(['plan','cross'],'planCross'),target(['director','kol'],'directorKol'),
         metrics,{0:remaining.planCross===null,1:remaining.directorKol===null});
@@ -410,7 +411,7 @@ function setupPlanSuggestions() {
     #plan-suggestion-dialog{width:min(1660px,calc(100vw - 32px));max-width:none;max-height:92vh;box-sizing:border-box;padding:0;border:0;border-radius:18px;box-shadow:0 24px 80px #13254040;color:var(--text);background:#fff}
     #plan-suggestion-dialog::backdrop{background:#15243e66}
     #plan-suggestion-dialog[open]{display:flex;flex-direction:column;overflow:hidden}
-    #plan-suggestion-content{padding:24px;min-height:0;overflow-y:auto;flex:1 1 auto}
+    #plan-suggestion-content{padding:24px;min-height:0;overflow-y:auto;overflow-x:hidden;flex:1 1 auto}
     .suggestion-heading{display:flex;justify-content:space-between;align-items:center;gap:16px}
     .suggestion-heading h2{margin:0;font-size:21px}.suggestion-heading p{margin:8px 0 0;color:var(--muted);font-size:14px}
     .suggestion-heading h2 .btn{margin-left:12px;vertical-align:middle;font-size:13px;font-weight:400}
@@ -434,6 +435,8 @@ function setupPlanSuggestions() {
     #plan-suggestion-dialog .pd-table{border:0}
     .suggestion-table-actions{display:flex;justify-content:flex-end;margin:0 0 12px}
     .suggestion-pair{grid-template-columns:minmax(1120px,1fr) minmax(1370px,1.7fr)}
+    #plan-suggestion-dialog .suggestion-pair{scrollbar-width:none;padding-bottom:0}
+    #plan-suggestion-dialog .suggestion-pair::-webkit-scrollbar{display:none;width:0;height:0}
     .suggestion-pair.suggestion-collapsed{grid-template-columns:minmax(760px,1fr) minmax(760px,1fr)}
     #plan-suggestion-dialog .suggestion-planning tr>:first-child{width:80px}
     #plan-suggestion-dialog .suggestion-planning tr>:last-child{width:260px}
