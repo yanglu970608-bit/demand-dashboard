@@ -171,6 +171,11 @@
   };
   updatePlanSuggestionPreview=function(){
     updateOriginal();const s=planSuggestion;
+    document.querySelectorAll('#plan-suggestion-dialog td[data-suggest-role-cell]').forEach(cell=>{
+      const number=cell.querySelector('input,span')||cell;
+      const value=Number(number.matches('input')?number.value:number.textContent);
+      number.style.color=Number.isFinite(value)&&value!==0?'#dc2626':'';
+    });
     if(s.aiSource){
       const totals=s.draft.map(r=>numericKeys.reduce((n,k)=>n+r[k],0)),low=Math.min(...totals),high=Math.max(...totals);
       s.rows.forEach((r,i)=>{
