@@ -275,6 +275,7 @@ async function exportPlanSuggestion() {
         });
         content.querySelectorAll('input').forEach(el=>{
           const value=doc.createElement('span');value.textContent=el.value;
+          value.style.color=doc.defaultView.getComputedStyle(el).color;
           el.replaceWith(value);
         });
       }
@@ -369,7 +370,7 @@ function updatePlanSuggestionPreview() {
     const change=rows.reduce((sum,row,i)=>sum+roles.reduce((v,k)=>v+row[k]-s.rows[i][k],0),0);
     const gap=s.goals[key]-change;
     if(gap!==0) exact=false;
-    return `<div><strong>${label}</strong><span>本次目标 ${signed(s.goals[key])} 条</span><span>建议净调整 ${signed(change)} 条</span><span class="${gap?'suggestion-error':''}">${gap?`还需调整 ${signed(gap)} 条`:'总量匹配'}</span></div>`;
+    return `<div><strong>${label}</strong><span>本次目标 ${signed(s.goals[key])} 条</span><span class="${gap?'suggestion-error':''}">${gap?`还需调整 ${signed(gap)} 条`:'总量匹配'}</span></div>`;
   }).join('');
   const valid=[...root.querySelectorAll('[data-suggest-role]')].every(el=>{
     const n=Number(el.value);
