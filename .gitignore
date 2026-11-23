@@ -38,3 +38,14 @@
 !/chengdu-products.js
 !/docs/chengdu-products.js
 !/supabase-dynamic-products.sql
+!/codex-suggestions.js
+!/codex-bridge/
+/codex-bridge/*
+!/codex-bridge/contract.cjs
+!/codex-bridge/server.cjs
+!/codex-bridge/result.schema.json
+!/codex-bridge/启动本机助手.ps1
+!/codex-bridge/使用说明.md
+!/codex-bridge/setup-queue.cjs
+!/supabase-ai-queue.sql
+!/docs/codex-suggestions.js

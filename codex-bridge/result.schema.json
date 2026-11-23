@@ -1,0 +1,21 @@
+{
+  "type":"object",
+  "additionalProperties":false,
+  "required":["rows"],
+  "properties":{
+    "rows":{
+      "type":"array",
+      "items":{
+        "type":"object",
+        "additionalProperties":false,
+        "required":["product","planCross","directorKol","reason"],
+        "properties":{
+          "product":{"type":"string"},
+          "planCross":{"type":"integer"},
+          "directorKol":{"type":"integer"},
+          "reason":{"type":"string"}
+        }
+      }
+    }
+  }
+}
