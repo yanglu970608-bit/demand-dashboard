@@ -1,7 +1,7 @@
 // Local pilot only. No Supabase write access and no model credentials in the browser.
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path');
 const {spawn}=require('node:child_process'),crypto=require('node:crypto'),os=require('node:os');
-const {validateRequest,validateResult}=require('./contract.cjs');
+const {validateRequest,validateResult,balanceLimits}=require('./contract.cjs');
 const runtime=path.resolve(__dirname,'../.local-backups/codex-bridge');
 fs.mkdirSync(runtime,{recursive:true});
 const tokenPath=path.join(runtime,'pairing-token');
@@ -22,12 +22,14 @@ const policy=`你是需求量分配顾问。只依据提供的JSON数字分析�
 targets是相对于计划起点base的最终增减总数，不能在已调整量上重复累加。必须严格满足策跨planCross和编导KOL directorKol各自的目标总和。
 先根据综合产出回报比roi决定产品整体增减规模，再用planCrossRoi和directorRoi决定岗位组倾斜。指标1代表100%，不是利润率。null是未填写，不等于0。
 日花占比spendShare和需求占比demandShare是辅助，但有实际影响：日花高、需求占比低可以适当多加；综合效率低限制整体增量，不能只因单岗位优秀而大幅增加整个产品。
-各产品普遍有调整是偏好，不是硬约束。差5条只是参考，不强制均分、不设硬性5条差距，不为弱岗位硬加数量。明显低效岗位可不增；如有充分理由允许产品/岗位之间有加有减，净量必须匹配。
-例：JC整体弱、编导弱，不应强行给编导增加；DF策跨好而编导弱，优先策跨；CR综合弱但编导好，应控制总量且倾斜编导；VF高效率但日花体量小，不能无限放大。
+均衡分布是必须认真落实的分配目标，而非最后随口参考：先按产品数量计算平均调整量，以此形成较均衡的基础分配，再按综合表现温和加减；不要直接按效率比例把增量集中到少数产品。通常优先在平均调整量上下约35%的附近分配，差5条仅为参考，不是固定差距或必须用满的范围。
+必须区分产品总增量与岗位增量：总增量足够覆盖产品且两个岗位组同向时，各产品应有适度增量，弱产品少增而不是不给；但任何一个弱岗位可以0增量或减量，把该产品的增量分给相对较好的岗位。不能为了覆盖所有岗位而给低效岗位硬加数量。
+产品的综合表现决定总量的适度差别；岗位回报比只决定内部倾斜，不应反过来让弱产品获得最高总增量。高综合效率但日花体量小的产品适当多增，不应过度放大。完全依据本次数据判断，不固定任何产品的优劣标签。
+若两个岗位目标相反、总净量小于产品数或减量受已有数量限制，则优先满足可行性和准确总量，仍应尽量分散。输入附带balanceLimits时，它是随本次平均量变化的宽松防偏斜范围，不代表应把两端差距用满，更不要求岗位均分。
 只有所选月份为1/4/7/10月时考虑trend；其他月份忽略trend，说明也不得提日花变化。不要写虚构的模型最优结论或预期收益。
 返回每个产品的planCross、directorKol整数增减。不得把任一岗位组减为负数量。图片不变。不要拆分组内岗位，程序按基期数量比例拆分，主要增量自然落在编导和策划。
 reason简述实际分配依据，不写“综合建议X条”，需求占比与日花占比比较无需附具体占比数字。请在输出前检查两组求和。`;
-function generate(input) {
+function generate(input,feedback='',deadline=Date.now()+180000) {
   return new Promise((resolve,reject)=>{
     const id=crypto.randomUUID(),dir=path.join(runtime,id);
     fs.mkdirSync(dir);
@@ -37,7 +39,7 @@ function generate(input) {
     const child=spawn(process.env.DEMAND_CODEX_BIN||'codex',args,{windowsHide:true,stdio:['pipe','ignore','pipe']});
     let diagnostic='',expired=false;
     child.stderr.on('data',b=>{diagnostic=(diagnostic+b.toString()).slice(-2000);});
-    const timer=setTimeout(()=>{expired=true;child.kill();},180000);
+    const timer=setTimeout(()=>{expired=true;child.kill();},Math.max(1,deadline-Date.now()));
     child.stdin.on('error',()=>{});
     child.once('error',e=>{clearTimeout(timer);reject(Error('无法启动Codex，请检查安装和登录状态。'));});
     child.once('exit',code=>{
@@ -47,9 +49,13 @@ function generate(input) {
       try {
         const result=validateResult(input,JSON.parse(fs.readFileSync(output,'utf8')));
         resolve(result);
-      } catch {reject(Error('模型结果未通过数量校验，未修改任何数据。请重新生成。'));}
+      } catch(error){
+        if(!feedback&&deadline-Date.now()>15000){
+          resolve(generate(input,'上次结果未通过校验：'+error.message+' 请重新生成完整分配，准确满足两个岗位总量与产品均衡要求。',deadline));
+        }else reject(Error('模型结果未通过数量或均衡校验，未修改任何数据。请重新生成。'));
+      }
     });
-    child.stdin.end(policy+'\n输入数据：\n'+JSON.stringify(input));
+    child.stdin.end(policy+'\n'+feedback+'\n输入数据：\n'+JSON.stringify({...input,balanceLimits:balanceLimits(input)}));
   });
 }
 function reply(res,status,obj) {

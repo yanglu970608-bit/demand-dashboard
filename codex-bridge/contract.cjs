@@ -22,6 +22,18 @@ function validateRequest(input) {
   });
   return {month:input.month,targets:{planCross:input.targets.planCross,directorKol:input.targets.directorKol},rows};
 }
+function balanceLimits(request) {
+  const {planCross:pc,directorKol:dk}=request.targets;
+  const net=pc+dk,n=request.rows.length;
+  // Small totals and opposing pool targets cannot always cover every product.
+  if(n<2||Math.abs(net)<n||pc*dk<0)return null;
+  const average=Math.abs(net)/n;
+  const min=Math.max(1,Math.floor(average*.5)),max=Math.ceil(average*1.5);
+  // Do not require an infeasible reduction from a product with insufficient quantity.
+  if(net<0&&request.rows.some(r=>
+    (pc<0?r.base.plan+r.base.cross:0)+(dk<0?r.base.director+r.base.kol:0)<max))return null;
+  return {direction:Math.sign(net),min,max,average};
+}
 function validateResult(request, result) {
   assert.ok(Array.isArray(result.rows) && result.rows.length === request.rows.length);
   const seen = new Set(), sums = {planCross:0,directorKol:0};
@@ -36,10 +48,15 @@ function validateResult(request, result) {
     assert.ok(typeof r.reason==='string' && r.reason.length<=500);
   }
   assert.deepEqual(sums,request.targets);
+  const limits=balanceLimits(request);
+  if(limits)for(const r of result.rows){
+    const amount=limits.direction*(r.planCross+r.directorKol);
+    if(amount<limits.min||amount>limits.max)throw Error(`产品${r.product}分配过于偏斜：产品总${limits.direction>0?'增':'减'}量应在${limits.min}至${limits.max}条之间，请重新均衡分配。岗位仍可为0或反向调整。`);
+  }
   return result;
 }
 function splitPair(amount,a,b) {
   const first=a+b ? Math.round(amount*a/(a+b)) : amount;
   return [first,amount-first];
 }
-module.exports={validateRequest,validateResult,splitPair};
+module.exports={validateRequest,validateResult,splitPair,balanceLimits};

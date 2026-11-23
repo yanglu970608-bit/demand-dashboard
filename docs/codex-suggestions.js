@@ -2,6 +2,18 @@
 (()=>{
   const endpoint='http://127.0.0.1:4318',key='demand-codex-local-pairing',cloudKey='demand-codex-cloud-pairing';
   let controller=null;
+  const fullscreenStyle=document.createElement('style');
+  fullscreenStyle.textContent='#plan-suggestion-dialog.suggestion-fullscreen{width:100vw!important;max-width:100vw!important;height:100dvh;max-height:100dvh!important;inset:0;margin:0;border-radius:0;box-sizing:border-box}';
+  document.head.appendChild(fullscreenStyle);
+  function setFullscreen(value){
+    if(!planSuggestion)return;
+    planSuggestion.fullscreen=value;
+    const dialog=document.getElementById('plan-suggestion-dialog');
+    dialog.classList.toggle('suggestion-fullscreen',value);
+    const button=dialog.querySelector('[data-suggest-fullscreen]');
+    if(button){button.textContent=value?'退出全屏':'全屏';button.setAttribute('aria-pressed',String(value));}
+    requestAnimationFrame(syncSuggestionScrollbar);
+  }
   const token=()=>localStorage.getItem(cloudKey)||localStorage.getItem(key)||'';
   async function cloudRpc(name,body,signal){
     const response=await fetch(cloud.url+'/rest/v1/rpc/'+name,{method:'POST',headers:{apikey:cloud.key,'Content-Type':'application/json'},
@@ -129,6 +141,17 @@
   renderPlanSuggestions=function(){
     renderOriginal();
     const s=planSuggestion,heading=document.querySelector('.suggestion-heading h2');
+    const fullscreen=document.createElement('button');fullscreen.className='btn';
+    fullscreen.dataset.suggestFullscreen='';fullscreen.onclick=()=>setFullscreen(!s.fullscreen);
+    heading.querySelector('[data-suggest-screenshot]').after(fullscreen);
+    const dialog=document.getElementById('plan-suggestion-dialog');
+    if(!dialog.dataset.fullscreenReady){
+      dialog.dataset.fullscreenReady='true';
+      dialog.addEventListener('cancel',e=>{
+        if(planSuggestion?.fullscreen){e.preventDefault();e.stopImmediatePropagation();setFullscreen(false);}
+      },true);
+    }
+    setFullscreen(!!s.fullscreen);
     const button=document.createElement('button');button.className='btn';
     button.textContent=token()?'重新生成AI建议':'连接Codex AI';
     button.disabled=!!s.codexBusy;button.onclick=()=>token()?generate():pairing();heading.appendChild(button);
@@ -143,7 +166,7 @@
     }
     if(s.aiSource){
       const rules=document.querySelector('.suggestion-rules p');
-      if(rules)rules.textContent='由Codex真实模型综合回报比、日花与需求占比、岗位效率给出建议，程序校验两个岗位组的目标总量及数量范围。不强制产品之间差5条，不为低效岗位硬分增量；仅季度首月考虑日花变化。点击应用才修改数据。';
+      if(rules)rules.textContent='由Codex真实模型先作较均衡的产品基础分配，再按综合回报比、日花与需求占比适度调整总量；岗位效率决定内部倾斜，弱岗位可以不增加。程序校验准确总量，并在可行时按平均调整量的宽松范围拦截过度集中结果，不固定差5条；仅季度首月考虑日花变化。点击应用才修改数据。';
     }
   };
   updatePlanSuggestionPreview=function(){
@@ -165,6 +188,6 @@
       else{planSuggestion.codexNeedsPair=true;renderPlanSuggestions();pairing();}
     }
   };
-  closePlanSuggestions=function(){controller?.abort();closeOriginal();};
+  closePlanSuggestions=function(){controller?.abort();setFullscreen(false);closeOriginal();};
   applyPlanSuggestions=function(){if(planSuggestion?.codexBusy||planSuggestion?.codexFailed||planSuggestion?.codexNeedsPair)return;applyOriginal();};
 })();
