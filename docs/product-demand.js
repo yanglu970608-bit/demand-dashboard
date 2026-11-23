@@ -107,6 +107,27 @@ function directorKolResetCapacity() {
     return sum+Math.max(row.director,base.director)+Math.max(row.kol,base.kol);
   },0);
 }
+function proportionalPlanReference() {
+  const previous=store.months[previousMonth(selectedMonth)]?.data;
+  const pc=remainingPlanCross(),dk=remainingDirectorKol();
+  const previousTotal=previous?.reduce((sum,row)=>sum+total(row),0)||0;
+  if(!previousTotal||pc===null||dk===null)return null;
+  const pcChange=data.reduce((sum,row)=>{
+    const base=planBaseRows().find(r=>r.product===row.product)||row;
+    return sum+row.plan+row.cross-base.plan-base.cross;
+  },0);
+  const fullTarget=pc+pcChange+dk+directorKolChange();
+  const rate=fullTarget/previousTotal;
+  return {fullTarget,previousTotal,rate,amount:code=>{
+    const old=previous.find(row=>row.product===code);
+    return (old?total(old):0)*rate;
+  }};
+}
+function proportionalPlanText(value) {
+  if(value===null)return '—';
+  const rounded=Math.round(Math.abs(value)*10)/10*Math.sign(value)||0;
+  return `${rounded>0?'+':''}${rounded.toLocaleString('en-US',{maximumFractionDigits:1})}`;
+}
 function renderPlanTargets() {
   const target=remainingDirectorKol(),remaining=remainingPlanCross();
   return `<section class="panel pd-targets"><div title="北京余量（条）＋成都余量（天）÷成都SLOTS单需求制作时间；正数可增量，负数需减量">
@@ -147,6 +168,10 @@ function renderProductDemand() {
   const focused=active?.matches('input[data-plan-role],input[data-plan-target]')?{attributes:[...active.attributes].filter(a=>a.name.startsWith('data-')),captured:active.dataset.undoCaptured}:null;
   const pair=quarterPair(),quarter=economicsForMonth()[pair.current]||{},priorQuarter=economics()[pair.previous]||{};
   const prev=store.months[previousMonth(selectedMonth)];
+  const proportional=proportionalPlanReference();
+  const proportionalTitle=proportional?
+    `上月产品需求量 ×（完整增减目标 ${proportional.fullTarget} ÷ 上月SLOTS总量 ${proportional.previousTotal}）；仅供参考`:
+    '需有上月SLOTS数量、策跨及编导KOL完整目标才能计算';
   const groupsOfProducts=[
     {name:'SLOTS',rows:orderedProducts(proposedRows()),slots:true},
     {name:'非SLOTS',rows:orderedProducts(proposedNonSlots()),slots:false}
@@ -178,12 +203,13 @@ function renderProductDemand() {
       return `<tr><th>${productName(r.product)}</th><td>${count(r)}</td>
         <td>${productBar(percent(portion(count(r),countTotal)),portion(count(r),countTotal))}</td>
         <td>${productBar(delta===null?'—':`${delta>0?'+':''}${delta}`,delta===null?null:delta/maxDelta*100,'demand')}</td>
+        ${group.slots?`<td data-proportional-product="${r.product}" title="${proportionalTitle}">${proportionalPlanText(proportional?proportional.amount(r.product):null)}</td>`:''}
         ${group.slots&&!planRolesCollapsed?numericKeys.map(k=>`<td><input type="number" step="1" min="${-base[k]}" max="${10000000-base[k]}" data-plan-product="${r.product}" data-plan-role="${k}" value="${planAdjustments()[r.product]?.[k]??''}" aria-label="${productName(r.product)} ${roleLabels[k]}增减"></td>`).join(''):''}</tr>`;
     }).join('');
     return `<section class="panel pd-section ${group.slots?'':'pd-nonslots'}"><div class="pd-heading"><h2>${group.name}产品需求量</h2>${group.slots?`<div class="pd-actions"><button class="btn" data-toggle-roles aria-expanded="${!planRolesCollapsed}">${planRolesCollapsed?'展开':'收起'}岗位增减</button><button class="btn primary" data-ai-suggest>AI建议</button></div>`:''}</div><div class="pd-pair ${planRolesCollapsed?'pd-roles-collapsed':''}">
       <div class="pd-table"><table><thead><tr><th>产品</th><th title="${pair.previous}">${pair.previousLabel}日花</th><th title="${pair.current}">${pair.currentLabel}日花</th>${sortHeading('产出回报比','roi')}${planRolesCollapsed?'':sortHeading('策跨产出回报比','planCrossRoi')+sortHeading('编导产出回报比','directorRoi')}${sortHeading(`${pair.currentLabel}日花占比`,'spend')}${sortHeading('日花变化','change')}</tr></thead><tbody>${economicsRows}</tbody>
       <tfoot><tr><th>合计</th><td>${money(oldSpend)}</td><td>${money(spendTotal)}</td><td>—</td>${planRolesCollapsed?'':'<td>—</td><td>—</td>'}<td>${percent(portion(spendTotal,spendTotal))}</td><td>${percent(oldSpend>0?(spendTotal-oldSpend)/oldSpend*100:null)}</td></tr></tfoot></table></div>
-      <div class="pd-table pd-planning ${group.slots&&!planRolesCollapsed?'':'pd-compact'}"><table><thead><tr><th>产品</th><th>计划量</th><th>需求量占比</th><th>需求量变化</th>${roleHeads}</tr></thead><tbody>${planningRows}</tbody><tfoot><tr><th>合计</th><td>${countTotal}</td><td>${percent(portion(countTotal,countTotal))}</td><td>${combined===null?'—':combined}</td>${group.slots&&!planRolesCollapsed?numericKeys.map(k=>`<td>${group.rows.reduce((s,r)=>s+(Number(planAdjustments()[r.product]?.[k])||0),0)}</td>`).join(''):''}</tr></tfoot></table></div>
+      <div class="pd-table pd-planning ${group.slots&&!planRolesCollapsed?'':'pd-compact'}"><table><thead><tr><th>产品</th><th>计划量</th><th>需求量占比</th><th>需求量变化</th>${group.slots?`<th class="pd-proportional-heading" title="${proportionalTitle}">等比例应增减量</th>`:''}${roleHeads}</tr></thead><tbody>${planningRows}</tbody><tfoot><tr><th>合计</th><td>${countTotal}</td><td>${percent(portion(countTotal,countTotal))}</td><td>${combined===null?'—':combined}</td>${group.slots?`<td data-proportional-total>${proportionalPlanText(proportional?group.rows.reduce((sum,r)=>sum+proportional.amount(r.product),0):null)}</td>`:''}${group.slots&&!planRolesCollapsed?numericKeys.map(k=>`<td>${group.rows.reduce((s,r)=>s+(Number(planAdjustments()[r.product]?.[k])||0),0)}</td>`).join(''):''}</tr></tfoot></table></div>
       </div></section>`;
   }).join('');
   if(focused) {
@@ -227,6 +253,8 @@ function setupProductDemand() {
     #product-view .pd-planning table{min-width:720px}#product-view th,#product-view td{text-align:center;padding:12px 6px;height:62px;box-sizing:border-box}
     #product-view .pd-compact table{min-width:400px}
     #product-view thead th{height:48px;background:var(--table-head);white-space:nowrap}
+    #product-view .pd-proportional-heading{width:150px}
+    #product-view .pd-pair:has(.pd-proportional-heading):not(.pd-roles-collapsed){grid-template-columns:minmax(1120px,1fr) minmax(1230px,1.4fr)}
     #product-view input{width:78px;max-width:100%;text-align:center;border:1px solid transparent;background:transparent;border-radius:7px;padding:7px 3px;font:inherit}
     #product-view input:focus{outline:2px solid #a7b7ea;background:white}#product-view input:hover{background:#f3f6fc}
     #product-view [data-field="spend"]{width:98px;height:35px;padding:6px 7px;font:inherit;color:var(--text)}#product-view tfoot td,#product-view tfoot th{background:#f2f5fb;font-weight:600}
